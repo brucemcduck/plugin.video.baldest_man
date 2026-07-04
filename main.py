@@ -34,6 +34,25 @@ def label_episode(item):
     return ' '.join(parts)
 
 
+def label_movie(item):
+    """Format movie label: Movie Title 1080p"""
+    parts = [item['show_title']]
+    if item.get('quality'):
+        parts.append(item['quality'])
+    return ' '.join(parts)
+
+
+def add_playable_item(item, handle):
+    """Add a playable listitem with play URL and IsPlayable set."""
+    li = xbmcgui.ListItem()
+    li.setInfo('video', {})
+    li.setProperty('IsPlayable', 'true')
+    ep_type = item.get('type', 'direct')
+    play_url = build_url({'mode': 'play', 'url': item['url'], 'type': ep_type})
+    xbmcplugin.addDirectoryItem(handle, play_url, li, isFolder=False)
+    return li
+
+
 def notify(msg):
     """Show a brief Kodi notification."""
     xbmcgui.Dialog().notification('bald_man', msg, xbmcgui.NOTIFICATION_INFO, 3000)
@@ -45,36 +64,61 @@ def api_key():
 
 mode = args.get('mode', None)
 
-# --- Root: show search dialog ---
+# --- Root: three-choice menu ---
 if mode is None:
-    dialog = xbmcgui.Dialog()
-    query = dialog.input('Search for anime', type=xbmcgui.INPUT_ALPHANUM)
-    if query:
-        url = build_url({'mode': 'search', 'q': query})
+    for label, content_type in [
+        ('Search Shows', 'shows'),
+        ('Search Movies', 'movies'),
+        ('Search All', 'all'),
+    ]:
+        url = build_url({'mode': 'search', 'content_type': content_type})
         xbmcplugin.addDirectoryItem(addon_handle, url,
-                                    xbmcgui.ListItem('Search: ' + query),
-                                    isFolder=True)
+                                    xbmcgui.ListItem(label), isFolder=True)
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
-# --- Search: run scrapers, group by show ---
+# --- Search: dialog, then filtered display ---
 elif mode[0] == 'search':
-    query = args.get('q', [''])[0]
-    results = scraper_runner.search_all(query)
+    content_type = args.get('content_type', ['all'])[0]
 
-    if not results:
-        li = xbmcgui.ListItem("Nothing found for '" + query + "'")
-        xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
+    dialog = xbmcgui.Dialog()
+    query = dialog.input('Search for anime', type=xbmcgui.INPUT_ALPHANUM)
+    if not query:
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
     else:
-        shows = {}
-        for r in results:
-            shows.setdefault(r['show_title'], []).append(r)
+        results = scraper_runner.search_all(query)
 
-        for show_title in sorted(shows.keys()):
-            url = build_url({'mode': 'episodes', 'q': query, 'show': show_title})
-            li = xbmcgui.ListItem(show_title)
-            xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+        # Split results into shows and movies
+        shows = {}
+        movies = []
+        for r in results:
+            if r.get('is_movie'):
+                movies.append(r)
+            else:
+                shows.setdefault(r['show_title'], []).append(r)
+
+        # Filter by content_type
+        show_movies = content_type in ('movies', 'all')
+        show_shows = content_type in ('shows', 'all')
+
+        if show_shows:
+            for show_title in sorted(shows.keys()):
+                url = build_url({'mode': 'episodes', 'q': query, 'show': show_title})
+                li = xbmcgui.ListItem(show_title)
+                xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+
+        if show_movies:
+            movies.sort(key=lambda r: r['show_title'])
+            for m in movies:
+                li = add_playable_item(m, addon_handle)
+                li.setLabel(label_movie(m))
+                li.setInfo('video', {'title': label_movie(m)})
+
+        # Show "nothing found" if filtered results are empty
+        total = (len(shows) if show_shows else 0) + (len(movies) if show_movies else 0)
+        if total == 0:
+            li = xbmcgui.ListItem("Nothing found for '" + query + "'")
+            xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
@@ -84,17 +128,14 @@ elif mode[0] == 'episodes':
     show_title = args.get('show', [''])[0]
     results = scraper_runner.search_all(query)
 
-    episodes = [r for r in results if r['show_title'] == show_title]
+    episodes = [r for r in results
+                if r['show_title'] == show_title and not r.get('is_movie')]
     episodes.sort(key=lambda r: int(r['episode']) if r['episode'].isdigit() else 0)
 
     for ep in episodes:
-        li = xbmcgui.ListItem(label_episode(ep))
+        li = add_playable_item(ep, addon_handle)
+        li.setLabel(label_episode(ep))
         li.setInfo('video', {'title': label_episode(ep)})
-        li.setProperty('IsPlayable', 'true')
-
-        ep_type = ep.get('type', 'direct')
-        play_url = build_url({'mode': 'play', 'url': ep['url'], 'type': ep_type})
-        xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
@@ -117,6 +158,5 @@ elif mode[0] == 'play':
                 notify('AllDebrid: ' + str(e))
                 xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
     else:
-        # Direct URL — hand straight to Kodi
         li = xbmcgui.ListItem(path=url)
         xbmcplugin.setResolvedUrl(addon_handle, True, li)
