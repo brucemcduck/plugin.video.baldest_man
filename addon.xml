@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.baldest_man"
+       name="bald_man"
+       version="0.1.0"
+       provider-name="bald_man">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+    <import addon="script.module.requests" version="2.22.0"/>
+  </requires>
+  <extension point="xbmc.python.pluginsource"
+             library="main.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Scrapes videos from websites</summary>
+    <description lang="en_GB">A simple video plugin that scrapes videos off websites.</description>
+    <platform>all</platform>
+    <license>MIT</license>
+    <source>https://github.com/balt_man</source>
+  </extension>
+</addon>
