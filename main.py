@@ -1,13 +1,17 @@
-"""plugin.video.baldest_man — multi-site anime video scraper."""
+"""plugin.video.baldest_man — multi-site anime video scraper with AllDebrid."""
 import sys
 import urllib.parse
+# pyrefly: ignore [missing-import]
+import xbmcaddon
 # pyrefly: ignore [missing-import]
 import xbmcgui
 # pyrefly: ignore [missing-import]
 import xbmcplugin
 
 from lib import scraper_runner
+from lib.alldebrid import resolve as ad_resolve, AllDebridError
 
+ADDON = xbmcaddon.Addon()
 base_url = sys.argv[0]
 addon_handle = int(sys.argv[1])
 args = urllib.parse.parse_qs(sys.argv[2][1:])
@@ -28,6 +32,15 @@ def label_episode(item):
     if item.get('quality'):
         parts.append(item['quality'])
     return ' '.join(parts)
+
+
+def notify(msg):
+    """Show a brief Kodi notification."""
+    xbmcgui.Dialog().notification('bald_man', msg, xbmcgui.NOTIFICATION_INFO, 3000)
+
+
+def api_key():
+    return ADDON.getSetting('alldebrid_api_key')
 
 
 mode = args.get('mode', None)
@@ -54,7 +67,6 @@ elif mode[0] == 'search':
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
     else:
-        # Group by show_title
         shows = {}
         for r in results:
             shows.setdefault(r['show_title'], []).append(r)
@@ -73,13 +85,38 @@ elif mode[0] == 'episodes':
     results = scraper_runner.search_all(query)
 
     episodes = [r for r in results if r['show_title'] == show_title]
-    # Sort by episode number as integer
     episodes.sort(key=lambda r: int(r['episode']) if r['episode'].isdigit() else 0)
 
     for ep in episodes:
         li = xbmcgui.ListItem(label_episode(ep))
         li.setInfo('video', {'title': label_episode(ep)})
         li.setProperty('IsPlayable', 'true')
-        xbmcplugin.addDirectoryItem(addon_handle, ep['url'], li, isFolder=False)
+
+        ep_type = ep.get('type', 'direct')
+        play_url = build_url({'mode': 'play', 'url': ep['url'], 'type': ep_type})
+        xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- Play: resolve if torrent, hand to Kodi ---
+elif mode[0] == 'play':
+    url = args.get('url', [''])[0]
+    ep_type = args.get('type', ['direct'])[0]
+
+    if ep_type == 'torrent':
+        key = api_key()
+        if not key:
+            notify('AllDebrid API key not set')
+            xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
+        else:
+            try:
+                direct_url = ad_resolve(url, key)
+                li = xbmcgui.ListItem(path=direct_url)
+                xbmcplugin.setResolvedUrl(addon_handle, True, li)
+            except AllDebridError as e:
+                notify('AllDebrid: ' + str(e))
+                xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
+    else:
+        # Direct URL — hand straight to Kodi
+        li = xbmcgui.ListItem(path=url)
+        xbmcplugin.setResolvedUrl(addon_handle, True, li)
