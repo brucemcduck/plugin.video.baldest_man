@@ -8,8 +8,8 @@ import xbmcgui
 # pyrefly: ignore [missing-import]
 import xbmcplugin
 
-from lib import scraper_runner
-from lib.alldebrid import resolve as ad_resolve, AllDebridError
+from resources.lib import scraper_runner
+from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
 
 ADDON = xbmcaddon.Addon()
 base_url = sys.argv[0]
