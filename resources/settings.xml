@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<settings>
+  <category label="AllDebrid">
+    <setting id="alldebrid_api_key" type="text" label="API Key" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+        <hidden>true</hidden>
+      </constraints>
+    </setting>
+  </category>
+</settings>
