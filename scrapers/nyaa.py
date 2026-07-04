@@ -6,7 +6,7 @@ import bs4
 SITE_NAME = "nyaa"
 
 BASE = "https://nyaa.si"
-SEARCH_URL = BASE + "/?f=0&c=1_2&q={}&s=seeders&o=desc"
+SEARCH_URL = BASE + "/?f=0&c=1_0&q={}&s=seeders&o=desc"
 
 _EP_PATTERNS = [
     re.compile(r'[-\s]#?(\d{2,3})(?:\s|$|v\d|[\[\(])'),   # " - 01 " or " 01 " or "#01" or "01v2"
