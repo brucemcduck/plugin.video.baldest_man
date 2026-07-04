@@ -3,7 +3,7 @@ import sys
 import traceback
 import scrapers
 
-REQUIRED_KEYS = {'show_title', 'episode', 'url'}
+REQUIRED_KEYS = {'show_title', 'url'}
 
 
 def search_all(query):
@@ -13,7 +13,8 @@ def search_all(query):
         query: str — user's search term
 
     Returns:
-        list[dict] — each dict has show_title, episode, url (and optionally title, quality)
+        list[dict] — each dict has show_title, url; optionally episode (for shows),
+                     is_movie (True for movies), title, quality
     """
     if not query:
         return []
@@ -41,6 +42,8 @@ def search_all(query):
             if not isinstance(item, dict):
                 continue
             if not REQUIRED_KEYS.issubset(item.keys()):
+                continue
+            if 'episode' not in item and not item.get('is_movie'):
                 continue
             item.setdefault('site', mod.SITE_NAME)
             item.setdefault('title', '')

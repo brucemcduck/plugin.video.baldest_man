@@ -42,10 +42,10 @@ def label_movie(item):
     return ' '.join(parts)
 
 
-def add_playable_item(item, handle):
+def add_playable_item(item, handle, label):
     """Add a playable listitem with play URL and IsPlayable set."""
-    li = xbmcgui.ListItem()
-    li.setInfo('video', {})
+    li = xbmcgui.ListItem(label)
+    li.setInfo('video', {'title': label})
     li.setProperty('IsPlayable', 'true')
     ep_type = item.get('type', 'direct')
     play_url = build_url({'mode': 'play', 'url': item['url'], 'type': ep_type})
@@ -110,9 +110,7 @@ elif mode[0] == 'search':
         if show_movies:
             movies.sort(key=lambda r: r['show_title'])
             for m in movies:
-                li = add_playable_item(m, addon_handle)
-                li.setLabel(label_movie(m))
-                li.setInfo('video', {'title': label_movie(m)})
+                li = add_playable_item(m, addon_handle, label_movie(m))
 
         # Show "nothing found" if filtered results are empty
         total = (len(shows) if show_shows else 0) + (len(movies) if show_movies else 0)
@@ -133,9 +131,7 @@ elif mode[0] == 'episodes':
     episodes.sort(key=lambda r: int(r['episode']) if r['episode'].isdigit() else 0)
 
     for ep in episodes:
-        li = add_playable_item(ep, addon_handle)
-        li.setLabel(label_episode(ep))
-        li.setInfo('video', {'title': label_episode(ep)})
+        li = add_playable_item(ep, addon_handle, label_episode(ep))
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
