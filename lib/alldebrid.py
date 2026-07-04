@@ -91,7 +91,10 @@ def resolve(url, api_key):
 def _check_response(resp):
     """Validate AllDebrid API response, raise AllDebridError on failure."""
     resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise AllDebridError("Invalid API response: {}".format(str(e)))
     status = data.get("status", "")
     error_msg = data.get("error", {}).get("message", "")
 
