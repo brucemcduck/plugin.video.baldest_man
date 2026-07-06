@@ -8,6 +8,19 @@
       </constraints>
     </setting>
   </category>
+  <category label="TMDB">
+    <setting id="tmdb_api_key" type="text" label="API Key" default="9dd14ab7866d37f8011440c6a4e71b68">
+      <constraints>
+        <allowempty>false</allowempty>
+        <hidden>true</hidden>
+      </constraints>
+    </setting>
+    <setting id="tmdb_language" type="text" label="Language" default="en">
+      <constraints>
+        <allowempty>false</allowempty>
+      </constraints>
+    </setting>
+  </category>
   <category label="Scrapers">
     <setting id="scraper_workers" type="integer" label="Max concurrent scrapers" default="6">
       <constraints>
