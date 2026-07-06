@@ -154,6 +154,12 @@ mode = args.get('mode', None)
 
 # --- Root: menu ---
 if mode is None:
+    # Clear stale search cache — fresh entry from root always shows dialog
+    try:
+        os.remove(_SEARCH_CACHE)
+    except OSError:
+        pass
+
     for label, content_type in [
         ('Search Shows', 'shows'),
         ('Search Movies', 'movies'),
