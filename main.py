@@ -71,6 +71,38 @@ def _save_cache(query, results):
         pass  # cache write failure is non-fatal
 
 
+def _display_results(query, content_type, results):
+    """Render the search results list (shows as folders, movies as playable)."""
+    shows = {}
+    movies = []
+    for r in results:
+        if r.get('is_movie'):
+            movies.append(r)
+        else:
+            shows.setdefault(r['show_title'], []).append(r)
+
+    show_movies = content_type in ('movies', 'all')
+    show_shows = content_type in ('shows', 'all')
+
+    if show_shows:
+        for show_title in sorted(shows.keys()):
+            url = build_url({'mode': 'episodes', 'q': query, 'show': show_title})
+            li = xbmcgui.ListItem(show_title)
+            xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+
+    if show_movies:
+        movies.sort(key=lambda r: r['show_title'])
+        for m in movies:
+            li = add_playable_item(m, addon_handle, label_movie(m))
+
+    total = (len(shows) if show_shows else 0) + (len(movies) if show_movies else 0)
+    if total == 0:
+        li = xbmcgui.ListItem("Nothing found for '" + query + "'")
+        xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
+
+    xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+
 def _cached_results(query):
     """Return cached search results if query matches, else re-scrape."""
     try:
@@ -113,45 +145,25 @@ elif mode[0] == 'search':
     else:
         results = scraper_runner.search_all(query, content_type=content_type)
         _save_cache(query, results)
+        _display_results(query, content_type, results)
 
-        # Split results into shows and movies
-        shows = {}
-        movies = []
-        for r in results:
-            if r.get('is_movie'):
-                movies.append(r)
-            else:
-                shows.setdefault(r['show_title'], []).append(r)
-
-        # Filter by content_type
-        show_movies = content_type in ('movies', 'all')
-        show_shows = content_type in ('shows', 'all')
-
-        if show_shows:
-            for show_title in sorted(shows.keys()):
-                url = build_url({'mode': 'episodes', 'q': query, 'show': show_title})
-                li = xbmcgui.ListItem(show_title)
-                xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
-
-        if show_movies:
-            movies.sort(key=lambda r: r['show_title'])
-            for m in movies:
-                li = add_playable_item(m, addon_handle, label_movie(m))
-
-        # Show "nothing found" if filtered results are empty
-        total = (len(shows) if show_shows else 0) + (len(movies) if show_movies else 0)
-        if total == 0:
-            li = xbmcgui.ListItem("Nothing found for '" + query + "'")
-            xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
-
-        xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+# --- Results: redisplay cached results (back-navigation) ---
+elif mode[0] == 'results':
+    query = args.get('q', [''])[0]
+    content_type = args.get('content_type', ['all'])[0]
+    results = _cached_results(query)
+    _display_results(query, content_type, results)
 
 # --- Episodes: list playable items for a show ---
 elif mode[0] == 'episodes':
     query = args.get('q', [''])[0]
     show_title = args.get('show', [''])[0]
-    # Use cached results from search screen — no re-scrape needed
     results = _cached_results(query)
+
+    # Back to search results
+    url = build_url({'mode': 'results', 'q': query, 'content_type': 'all'})
+    xbmcplugin.addDirectoryItem(addon_handle, url,
+                                xbmcgui.ListItem(".."), isFolder=True)
 
     # ponytail: substring match — scrapers format show_title differently,
     # e.g. nyaa returns "Dragon Ball Daima" but eztv returns "Dragon.Ball.Daima.S01E05"
