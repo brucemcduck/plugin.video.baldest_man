@@ -86,7 +86,7 @@ elif mode[0] == 'search':
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
     else:
-        results = scraper_runner.search_all(query)
+        results = scraper_runner.search_all(query, content_type=content_type)
 
         # Split results into shows and movies
         shows = {}
@@ -124,7 +124,7 @@ elif mode[0] == 'search':
 elif mode[0] == 'episodes':
     query = args.get('q', [''])[0]
     show_title = args.get('show', [''])[0]
-    results = scraper_runner.search_all(query)
+    results = scraper_runner.search_all(query, content_type='shows')
 
     episodes = [r for r in results
                 if r['show_title'] == show_title and not r.get('is_movie')]
