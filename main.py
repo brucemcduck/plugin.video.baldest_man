@@ -1,5 +1,8 @@
 """plugin.video.baldest_man — multi-site anime video scraper with AllDebrid."""
+import json
+import os
 import sys
+import tempfile
 import urllib.parse
 # pyrefly: ignore [missing-import]
 import xbmcaddon
@@ -17,6 +20,8 @@ addon_handle = int(sys.argv[1])
 args = urllib.parse.parse_qs(sys.argv[2][1:])
 
 xbmcplugin.setContent(addon_handle, 'movies')
+
+_CACHE_FILE = os.path.join(tempfile.gettempdir(), "baldman_search.json")
 
 
 def build_url(query):
@@ -58,6 +63,26 @@ def notify(msg):
     xbmcgui.Dialog().notification('bald_man', msg, xbmcgui.NOTIFICATION_INFO, 3000)
 
 
+def _save_cache(query, results):
+    try:
+        with open(_CACHE_FILE, 'w') as f:
+            json.dump({"query": query, "results": results}, f)
+    except (OSError, TypeError):
+        pass  # cache write failure is non-fatal
+
+
+def _cached_results(query):
+    """Return cached search results if query matches, else re-scrape."""
+    try:
+        with open(_CACHE_FILE) as f:
+            data = json.load(f)
+        if data.get("query") == query:
+            return data["results"]
+    except (OSError, json.JSONDecodeError, KeyError):
+        pass
+    return scraper_runner.search_all(query, content_type='shows')
+
+
 def api_key():
     return ADDON.getSetting('alldebrid_api_key')
 
@@ -87,6 +112,7 @@ elif mode[0] == 'search':
 
     else:
         results = scraper_runner.search_all(query, content_type=content_type)
+        _save_cache(query, results)
 
         # Split results into shows and movies
         shows = {}
@@ -124,7 +150,8 @@ elif mode[0] == 'search':
 elif mode[0] == 'episodes':
     query = args.get('q', [''])[0]
     show_title = args.get('show', [''])[0]
-    results = scraper_runner.search_all(query, content_type='shows')
+    # Use cached results from search screen — no re-scrape needed
+    results = _cached_results(query)
 
     # ponytail: substring match — scrapers format show_title differently,
     # e.g. nyaa returns "Dragon Ball Daima" but eztv returns "Dragon.Ball.Daima.S01E05"
