@@ -54,10 +54,15 @@ def resolve(url, api_key):
         if not magnets:
             raise AllDebridError("No magnet info in status response")
         _log("status magnets type=" + type(magnets).__name__ + " value=" + str(magnets)[:500])
-        magnet_info = _first_item(magnets)
-        _log("magnet_info type=" + type(magnet_info).__name__ + " value=" + str(magnet_info)[:500])
 
-        # v4.1 status: int code (4=Ready) or string, or full dict
+        # v4.1 with ?id=X returns the magnet object directly as the dict value,
+        # not nested inside another collection.
+        if isinstance(magnets, dict) and "status" in magnets:
+            magnet_info = magnets
+        else:
+            magnet_info = _first_item(magnets)
+        _log("magnet_info type=" + type(magnet_info).__name__ + " keys=" + str(list(magnet_info.keys()) if isinstance(magnet_info, dict) else 'N/A')[:200])
+
         if isinstance(magnet_info, dict):
             magnet_status = magnet_info.get("status", "")
             status_code = magnet_info.get("statusCode", -1)
@@ -70,17 +75,8 @@ def resolve(url, api_key):
         _log("magnet_status=" + magnet_status + " status_code=" + str(status_code))
 
         if magnet_status in ("Ready", "4") or status_code == 4:
-            # Step 4: Get files
-            files_resp = requests.get(
-                API + "/magnet/files",
-                params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
-                timeout=30,
-            )
-            files_data = _check_response(files_resp)
-            file_tree = files_data.get("data", {}).get("files", [])
-            _log("files response: " + str(file_tree)[:500])
-
-            file_link = _find_file_link(file_tree)
+            # v4.1 with ?id=X returns files inline in status response
+            file_link = _find_file_link(magnet_info.get("files", []))
             if not file_link:
                 raise AllDebridError("Magnet ready but no files returned")
 
@@ -105,18 +101,20 @@ def resolve(url, api_key):
 
 
 def _find_file_link(files):
-    """Find first downloadable file link in AllDebrid's v4.1 nested file tree."""
+    """Find first downloadable file link in AllDebrid's v4.1 nested file tree.
+    Tree nodes: {"n": name, "s": size, "l": link} for files,
+    {"n": name, "e": [...]} or {"n": name, "files": [...]} for folders.
+    """
     if isinstance(files, list):
         for f in files:
             if isinstance(f, dict):
-                # Direct file: {"n": "name", "s": size, "l": "url"}
                 if "l" in f and f["l"]:
                     return f["l"]
-                # Nested folder: {"n": "folder", "files": [...]}
-                if "files" in f:
-                    result = _find_file_link(f["files"])
-                    if result:
-                        return result
+                for child_key in ("e", "files"):
+                    if child_key in f:
+                        result = _find_file_link(f[child_key])
+                        if result:
+                            return result
     return None
 
 
