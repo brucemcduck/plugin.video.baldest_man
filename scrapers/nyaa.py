@@ -4,6 +4,7 @@ import requests
 import bs4
 
 SITE_NAME = "nyaa"
+CONTENT_TYPES = ["shows"]
 
 BASE = "https://nyaa.si"
 SEARCH_URL = BASE + "/?f=0&c=1_0&q={}&s=seeders&o=desc"
