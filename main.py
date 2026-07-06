@@ -1,6 +1,9 @@
 """plugin.video.baldest_man — multi-site video scraper with AllDebrid + TMDB metadata."""
+import json
+import os
 import re
 import sys
+import tempfile
 import urllib.parse
 # pyrefly: ignore [missing-import]
 import xbmcaddon
@@ -30,6 +33,28 @@ def build_url(query):
 def notify(msg):
     """Show a brief Kodi notification."""
     xbmcgui.Dialog().notification('bald_man', msg, xbmcgui.NOTIFICATION_INFO, 3000)
+
+
+_SEARCH_CACHE = os.path.join(tempfile.gettempdir(), "baldman_tmdb.json")
+
+
+def _save_search_cache(content_type, shows, movies, query):
+    """Save TMDB search results so back-navigation avoids re-dialog."""
+    try:
+        with open(_SEARCH_CACHE, 'w') as f:
+            json.dump({"content_type": content_type, "shows": shows,
+                        "movies": movies, "query": query}, f)
+    except (OSError, TypeError):
+        pass
+
+
+def _read_search_cache():
+    """Return cached TMDB results dict or None."""
+    try:
+        with open(_SEARCH_CACHE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
 
 
 def set_info(li, item, is_folder):
@@ -149,21 +174,32 @@ if mode is None:
 # --- Search: TMDB lookup ---
 elif mode[0] == 'search':
     content_type = args.get('content_type', ['all'])[0]
+    key = tmdb_api_key()
+    lang = tmdb_lang()
+    shows = []
+    movies = []
+    query = ''
 
-    dialog = xbmcgui.Dialog()
-    query = dialog.input(f'Search {content_type.capitalize()}',
-                         type=xbmcgui.INPUT_ALPHANUM)
-    if not query:
-        xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
-
+    # Check cache — skip dialog on back-navigation
+    cached = _read_search_cache()
+    if cached and cached.get('content_type') == content_type:
+        shows = cached.get('shows', [])
+        movies = cached.get('movies', [])
+        query = cached.get('query', '')
     else:
-        key = tmdb_api_key()
-        lang = tmdb_lang()
-        shows = []
-        movies = []
+        dialog = xbmcgui.Dialog()
+        query = dialog.input(f'Search {content_type.capitalize()}',
+                             type=xbmcgui.INPUT_ALPHANUM)
+        if not query:
+            xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+        else:
+            shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
+            movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
+            _save_search_cache(content_type, shows, movies, query)
+
+    if query:
 
         if content_type in ('shows', 'all'):
-            shows = tmdb.search_shows(query, key, lang)
             for s in shows:
                 url = build_url({'mode': 'seasons', 'show_id': str(s['id']),
                                  'show_title': s['title']})
@@ -173,7 +209,6 @@ elif mode[0] == 'search':
                 xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
         if content_type in ('movies', 'all'):
-            movies = tmdb.search_movies(query, key, lang)
             for m in movies:
                 url = build_url({'mode': 'scrape', 'show_title': m['title'],
                                  'year': m.get('year', ''),
