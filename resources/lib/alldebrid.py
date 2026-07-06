@@ -41,6 +41,7 @@ def resolve(url, api_key):
             raise AllDebridError("No magnet ID in upload response")
 
         # Step 3: Get status via v4.1 (v4/magnet/status deprecated since 10/2024)
+        # v4.1 returns compact status — int code or string, no files inline
         status_resp = requests.get(
             API + ".1/magnet/status",
             params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
@@ -52,13 +53,31 @@ def resolve(url, api_key):
         if not magnets:
             raise AllDebridError("No magnet info in status response")
         magnet_info = _first_item(magnets)
-        if not isinstance(magnet_info, dict):
-            raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
-        magnet_status = magnet_info.get("status", "")
 
-        if magnet_status == "Ready":
-            # v4.1: files are a nested tree — find first downloadable file
-            file_link = _find_file_link(magnet_info.get("files", []))
+        # v4.1 status: int code or string. 4 = Ready.
+        if isinstance(magnet_info, dict):
+            # Full object format (legacy compat or single-magnet query)
+            magnet_status = magnet_info.get("status", "")
+            status_code = magnet_info.get("statusCode", -1)
+        elif isinstance(magnet_info, (int, str)):
+            magnet_status = str(magnet_info)
+            status_code = int(magnet_info) if str(magnet_info).isdigit() else -1
+        else:
+            raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
+
+        if magnet_status in ("Ready", "4") or status_code == 4:
+            # Step 4: Get files via dedicated endpoint (v4.1 moved files here)
+            files_resp = requests.get(
+                API + "/magnet/files",
+                params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
+                timeout=30,
+            )
+            files_data = _check_response(files_resp)
+            file_tree = files_data.get("data", {}).get("files", [])
+
+            file_link = _find_file_link(file_tree)
+            if not file_link:
+                raise AllDebridError("Magnet ready but no files returned")
             if not file_link:
                 raise AllDebridError("Magnet ready but no files returned")
 
@@ -74,10 +93,10 @@ def resolve(url, api_key):
                 raise AllDebridError("Failed to unlock link")
             return direct_url
 
-        elif magnet_status == "Downloading" or magnet_status == "Processing":
+        elif magnet_status in ("Downloading", "Processing", "0", "1") or status_code in (0, 1):
             raise AllDebridError("Magnet still processing, try again")
         else:
-            raise AllDebridError("Unknown magnet status: {}".format(magnet_status))
+            raise AllDebridError("Magnet failed — status: {} code: {}".format(magnet_status, status_code))
     except RequestException as e:
         raise AllDebridError("API request failed: {}".format(str(e)))
 
