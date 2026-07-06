@@ -13,6 +13,7 @@ import xbmcplugin
 
 from resources.lib import scraper_runner
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
+from resources.lib.alldebrid_auth import get_pin, poll_for_key, AuthError
 
 ADDON = xbmcaddon.Addon()
 base_url = sys.argv[0]
@@ -121,7 +122,7 @@ def api_key():
 
 mode = args.get('mode', None)
 
-# --- Root: three-choice menu ---
+# --- Root: menu ---
 if mode is None:
     for label, content_type in [
         ('Search Shows', 'shows'),
@@ -131,6 +132,14 @@ if mode is None:
         url = build_url({'mode': 'search', 'content_type': content_type})
         xbmcplugin.addDirectoryItem(addon_handle, url,
                                     xbmcgui.ListItem(label), isFolder=True)
+
+    # AllDebrid authorization
+    key = api_key()
+    auth_label = "AllDebrid ✓" if key else "Authorize AllDebrid"
+    url = build_url({'mode': 'auth'})
+    xbmcplugin.addDirectoryItem(addon_handle, url,
+                                xbmcgui.ListItem(auth_label), isFolder=False)
+
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 # --- Search: dialog, then filtered display ---
@@ -177,6 +186,33 @@ elif mode[0] == 'episodes':
         li = add_playable_item(ep, addon_handle, label_episode(ep))
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- Auth: AllDebrid PIN-based device authorization ---
+elif mode[0] == 'auth':
+    try:
+        pin, check_token, user_url, expires = get_pin()
+    except AuthError as e:
+        notify("AllDebrid: " + str(e))
+    else:
+        msg = ("1. Go to: [COLOR skyblue]{}[/COLOR]\n"
+               "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
+               "3. Press OK after authorizing").format(
+                   user_url or "https://alldebrid.com/pin/", pin)
+        xbmcgui.Dialog().ok("AllDebrid Authorization", msg)
+
+        # Poll with progress indicator
+        pdlg = xbmcgui.DialogProgress()
+        pdlg.create("AllDebrid", "Waiting for authorization...")
+        try:
+            apikey = poll_for_key(pin, check_token)
+            ADDON.setSetting('alldebrid_api_key', apikey)
+            pdlg.close()
+            notify("AllDebrid authorized!")
+        except AuthError as e:
+            pdlg.close()
+            notify("AllDebrid: " + str(e))
+
+    xbmcplugin.endOfDirectory(addon_handle)
 
 # --- Play: resolve if torrent, hand to Kodi ---
 elif mode[0] == 'play':
