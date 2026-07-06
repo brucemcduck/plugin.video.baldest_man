@@ -1,4 +1,5 @@
 """EZTV — TV show torrents via API (eztv.re)."""
+import re
 import requests
 
 SITE_NAME = "eztv"
@@ -6,6 +7,8 @@ CONTENT_TYPES = ["shows"]
 
 API = "https://eztv.re/api/get-torrents"
 HEADERS = {"User-Agent": "plugin.video.baldest_man/0.1"}
+
+_SE_RE = re.compile(r'[Ss](\d{1,2})[Ee](\d{1,3})')
 
 
 def search(query):
@@ -40,7 +43,7 @@ def search(query):
         size_bytes = int(t.get("size_bytes", 0))
 
         result = {
-            "show_title": title,
+            "show_title": _show_title(title),
             "url": magnet,
             "type": "torrent",
             "site": SITE_NAME,
@@ -72,3 +75,16 @@ def search(query):
         results.append(result)
 
     return results
+
+
+def _show_title(title):
+    """Extract show name from torrent title. 'Show.Name.S01E05...' → 'Show Name'."""
+    m = _SE_RE.search(title)
+    if m:
+        name = title[:m.start()].strip(' .-[]()')
+        # Replace dots with spaces: "Show.Name" → "Show Name"
+        if '.' in name and ' ' not in name:
+            name = name.replace('.', ' ')
+    else:
+        name = title
+    return re.sub(r'\s+', ' ', name)

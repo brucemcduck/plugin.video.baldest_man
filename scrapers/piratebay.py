@@ -74,6 +74,8 @@ def _parse(title, magnet):
         show_title = title[:se_m.start()].strip()
 
     show_title = re.sub(r'\s+', ' ', show_title).rstrip(' -.[]()')
+    if '.' in show_title and ' ' not in show_title:
+        show_title = show_title.replace('.', ' ')
 
     result = {
         "show_title": show_title or title,

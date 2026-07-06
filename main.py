@@ -126,8 +126,12 @@ elif mode[0] == 'episodes':
     show_title = args.get('show', [''])[0]
     results = scraper_runner.search_all(query, content_type='shows')
 
+    # ponytail: substring match — scrapers format show_title differently,
+    # e.g. nyaa returns "Dragon Ball Daima" but eztv returns "Dragon.Ball.Daima.S01E05"
     episodes = [r for r in results
-                if r['show_title'] == show_title and not r.get('is_movie')]
+                if not r.get('is_movie')
+                and (r['show_title'] == show_title
+                     or show_title.lower() in r['show_title'].lower())]
     episodes.sort(key=lambda r: int(r['episode']) if r['episode'].isdigit() else 0)
 
     for ep in episodes:
