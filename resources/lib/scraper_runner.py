@@ -1,4 +1,5 @@
 """Runs scrapers in parallel against a query, filters by content type."""
+import re
 import sys
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -90,8 +91,13 @@ def _worker_count():
 
 
 def _relevant(query, show_title):
-    """True if the query appears as a substring of show_title (case-insensitive)."""
-    return query.lower() in show_title.lower()
+    """True if query matches show_title, case-insensitive, punctuation-normalized.
+    Bidirectional: handles both broad queries and precise queries like
+    "Show S01E05" (show_title = "Show") or "Movie 1999" (show_title has "(1999)").
+    """
+    qn = re.sub(r'[^\w\s]', '', query.lower())
+    sn = re.sub(r'[^\w\s]', '', show_title.lower())
+    return qn in sn or sn in qn
 
 
 def _log(msg):
