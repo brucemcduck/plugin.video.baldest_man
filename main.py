@@ -317,6 +317,9 @@ elif mode[0] == 'scrape':
         except Exception:
             pass
 
+    # Sort by file size descending (largest first)
+    results.sort(key=lambda r: _parse_size_bytes(r.get('size', '')), reverse=True)
+
     for r in results:
         if season_number and 'episode' in r and 'season' not in r:
             r['season'] = season_number
