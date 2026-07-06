@@ -8,4 +8,12 @@
       </constraints>
     </setting>
   </category>
+  <category label="Scrapers">
+    <setting id="scraper_workers" type="integer" label="Max concurrent scrapers" default="6">
+      <constraints>
+        <minimum>1</minimum>
+        <maximum>20</maximum>
+      </constraints>
+    </setting>
+  </category>
 </settings>
