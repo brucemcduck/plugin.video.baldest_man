@@ -151,6 +151,7 @@ elif mode[0] == 'search':
         total = (len(shows) if content_type in ('shows', 'all') else 0) + \
                 (len(movies) if content_type in ('movies', 'all') else 0)
         if total == 0:
+            notify("No results from TMDB — check connection")
             li = xbmcgui.ListItem(f"Nothing found for '{query}'")
             xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
 

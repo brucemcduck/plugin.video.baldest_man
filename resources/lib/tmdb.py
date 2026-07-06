@@ -1,4 +1,5 @@
 """TMDB API client — search shows/movies, get seasons and episodes."""
+import time
 import requests
 
 BASE = "https://api.themoviedb.org/3"
@@ -7,18 +8,30 @@ TIMEOUT = 15
 HEADERS = {"User-Agent": "plugin.video.baldest_man/0.1"}
 
 
+def _tmdb_get(url, params):
+    """GET with one 429 retry. Returns parsed JSON or raises."""
+    for attempt in (1, 2):
+        try:
+            resp = requests.get(url, params=params, timeout=TIMEOUT, headers=HEADERS)
+            if resp.status_code == 429 and attempt == 1:
+                time.sleep(2)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException:
+            if attempt == 2:
+                raise
+
+    return {}  # unreachable
+
+
 def search_shows(query, api_key, language="en"):
     """Search TV shows. Returns list of {id, title, year, overview, poster_url}."""
     if not query or not api_key:
         return []
     try:
-        resp = requests.get(
-            f"{BASE}/search/tv",
-            params={"api_key": api_key, "query": query, "language": language},
-            timeout=TIMEOUT, headers=HEADERS,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _tmdb_get(f"{BASE}/search/tv",
+                         {"api_key": api_key, "query": query, "language": language})
     except (requests.RequestException, ValueError):
         return []
 
@@ -41,13 +54,8 @@ def search_movies(query, api_key, language="en"):
     if not query or not api_key:
         return []
     try:
-        resp = requests.get(
-            f"{BASE}/search/movie",
-            params={"api_key": api_key, "query": query, "language": language},
-            timeout=TIMEOUT, headers=HEADERS,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _tmdb_get(f"{BASE}/search/movie",
+                         {"api_key": api_key, "query": query, "language": language})
     except (requests.RequestException, ValueError):
         return []
 
@@ -69,13 +77,8 @@ def get_seasons(show_id, api_key, language="en"):
     """Get seasons for a TV show. Skips season 0 (specials).
     Returns list of {season_number, episode_count, name, poster_url}."""
     try:
-        resp = requests.get(
-            f"{BASE}/tv/{show_id}",
-            params={"api_key": api_key, "language": language},
-            timeout=TIMEOUT, headers=HEADERS,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _tmdb_get(f"{BASE}/tv/{show_id}",
+                         {"api_key": api_key, "language": language})
     except (requests.RequestException, ValueError):
         return []
 
@@ -98,13 +101,8 @@ def get_seasons(show_id, api_key, language="en"):
 def get_episodes(show_id, season_number, api_key, language="en"):
     """Get episodes for a season. Returns list of {episode_number, name, overview, still_url}."""
     try:
-        resp = requests.get(
-            f"{BASE}/tv/{show_id}/season/{season_number}",
-            params={"api_key": api_key, "language": language},
-            timeout=TIMEOUT, headers=HEADERS,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _tmdb_get(f"{BASE}/tv/{show_id}/season/{season_number}",
+                         {"api_key": api_key, "language": language})
     except (requests.RequestException, ValueError):
         return []
 
