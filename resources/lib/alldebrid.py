@@ -9,19 +9,18 @@ class AllDebridError(Exception):
     pass
 
 
+def _log(msg):
+    """Log to Kodi or stderr for debugging."""
+    try:
+        import xbmc
+        xbmc.log("bald_man alldebrid: " + str(msg), level=xbmc.LOGINFO)
+    except ImportError:
+        import sys
+        print("alldebrid: " + str(msg), file=sys.stderr)
+
+
 def resolve(url, api_key):
-    """Resolve a magnet link or torrent URL to a direct streamable URL.
-
-    Args:
-        url: str — magnet link (magnet:?xt=urn:btih:...) or torrent URL
-        api_key: str — AllDebrid API key
-
-    Returns:
-        str — direct downloadable/streamable URL
-
-    Raises:
-        AllDebridError — on any failure (bad key, rate limit, service down, no files)
-    """
+    """Resolve a magnet link or torrent URL to a direct streamable URL."""
     if not api_key:
         raise AllDebridError("API key not set")
 
@@ -33,30 +32,33 @@ def resolve(url, api_key):
             timeout=30,
         )
         upload_data = _check_response(upload_resp)
+        _log("upload response: " + str(upload_data.get("data", {}).get("magnets", "?"))[:500])
 
         # Step 2: Get the magnet/torrent ID
         magnets = upload_data.get("data", {}).get("magnets", [])
         magnet_id = _extract_id(magnets)
         if not magnet_id:
             raise AllDebridError("No magnet ID in upload response")
+        _log("magnet_id=" + str(magnet_id))
 
-        # Step 3: Get status via v4.1 (v4/magnet/status deprecated since 10/2024)
-        # v4.1 returns compact status — int code or string, no files inline
+        # Step 3: Get status via v4.1
         status_resp = requests.get(
             API + ".1/magnet/status",
             params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
             timeout=30,
         )
         status_data = _check_response(status_resp)
+        _log("status response: " + str(status_data.get("data", {}))[:500])
 
         magnets = status_data.get("data", {}).get("magnets", [])
         if not magnets:
             raise AllDebridError("No magnet info in status response")
+        _log("status magnets type=" + type(magnets).__name__ + " value=" + str(magnets)[:500])
         magnet_info = _first_item(magnets)
+        _log("magnet_info type=" + type(magnet_info).__name__ + " value=" + str(magnet_info)[:500])
 
-        # v4.1 status: int code or string. 4 = Ready.
+        # v4.1 status: int code (4=Ready) or string, or full dict
         if isinstance(magnet_info, dict):
-            # Full object format (legacy compat or single-magnet query)
             magnet_status = magnet_info.get("status", "")
             status_code = magnet_info.get("statusCode", -1)
         elif isinstance(magnet_info, (int, str)):
@@ -65,8 +67,10 @@ def resolve(url, api_key):
         else:
             raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
 
+        _log("magnet_status=" + magnet_status + " status_code=" + str(status_code))
+
         if magnet_status in ("Ready", "4") or status_code == 4:
-            # Step 4: Get files via dedicated endpoint (v4.1 moved files here)
+            # Step 4: Get files
             files_resp = requests.get(
                 API + "/magnet/files",
                 params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
@@ -74,10 +78,9 @@ def resolve(url, api_key):
             )
             files_data = _check_response(files_resp)
             file_tree = files_data.get("data", {}).get("files", [])
+            _log("files response: " + str(file_tree)[:500])
 
             file_link = _find_file_link(file_tree)
-            if not file_link:
-                raise AllDebridError("Magnet ready but no files returned")
             if not file_link:
                 raise AllDebridError("Magnet ready but no files returned")
 
