@@ -36,14 +36,9 @@ def resolve(url, api_key):
 
         # Step 2: Get the magnet/torrent ID
         magnets = upload_data.get("data", {}).get("magnets", [])
-        if not magnets:
-            raise AllDebridError("No magnet returned from upload")
-        # v4.1 may return dict or list
-        magnet_info = next(iter(magnets.values())) if isinstance(magnets, dict) else magnets[0]
-
-        magnet_id = magnet_info.get("id")
+        magnet_id = _extract_id(magnets)
         if not magnet_id:
-            raise AllDebridError("No magnet ID in response")
+            raise AllDebridError("No magnet ID in upload response")
 
         # Step 3: Get status via v4.1 (v4/magnet/status deprecated since 10/2024)
         status_resp = requests.get(
@@ -56,8 +51,9 @@ def resolve(url, api_key):
         magnets = status_data.get("data", {}).get("magnets", [])
         if not magnets:
             raise AllDebridError("No magnet info in status response")
-        # v4.1 may return dict or list
-        magnet_info = next(iter(magnets.values())) if isinstance(magnets, dict) else magnets[0]
+        magnet_info = _first_item(magnets)
+        if not isinstance(magnet_info, dict):
+            raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
         magnet_status = magnet_info.get("status", "")
 
         if magnet_status == "Ready":
@@ -116,3 +112,24 @@ def _check_response(resp):
         raise AllDebridError(error_msg or "Unknown API error")
 
     return data
+
+
+def _first_item(collection):
+    """Get first item from a list or dict value. Handles v4.1 format variations."""
+    if isinstance(collection, dict):
+        return next(iter(collection.values()), None)
+    if isinstance(collection, list) and collection:
+        return collection[0]
+    return None
+
+
+def _extract_id(collection):
+    """Extract magnet ID from upload response. v4.1 may return:
+    - list of dicts: [{"id": 123, ...}]
+    - dict of dicts: {"hash": {"id": 123, ...}}
+    - dict of ints: {"hash": 123}  (value IS the id)
+    """
+    item = _first_item(collection)
+    if isinstance(item, dict):
+        return item.get("id")
+    return item  # int or string ID directly
