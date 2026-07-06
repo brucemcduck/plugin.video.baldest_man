@@ -134,7 +134,8 @@ def add_scrape_result(item, poster_url=None):
         li.setArt({'poster': poster_url, 'thumb': poster_url})
 
     play_url = build_url({'mode': 'play', 'url': item['url'],
-                          'type': item.get('type', 'direct')})
+                          'type': item.get('type', 'direct'),
+                          'label': label})
     xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
 
 
@@ -169,6 +170,34 @@ if mode is None:
         xbmcplugin.addDirectoryItem(addon_handle, url,
                                     xbmcgui.ListItem(label), isFolder=True)
 
+    # Continue Watching — last played torrent
+    last = ADDON.getSetting('last_played')
+    if last:
+        try:
+            last_data = json.loads(last)
+            if last_data.get('url'):
+                url = build_url({'mode': 'continue_watching'})
+                xbmcplugin.addDirectoryItem(addon_handle, url,
+                                            xbmcgui.ListItem("Continue Watching"), isFolder=True)
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- Continue Watching: show last played item ---
+elif mode[0] == 'continue_watching':
+    last = ADDON.getSetting('last_played')
+    if last:
+        try:
+            item = json.loads(last)
+            label = item.get('label', 'Last Played') or 'Last Played'
+            li = xbmcgui.ListItem(label)
+            li.setProperty('IsPlayable', 'true')
+            play_url = build_url({'mode': 'play', 'url': item['url'], 'type': 'torrent',
+                                  'label': label})
+            xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
+        except (json.JSONDecodeError, KeyError):
+            pass
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 # --- Search: TMDB lookup ---
@@ -379,6 +408,9 @@ elif mode[0] == 'play':
         else:
             try:
                 direct_url = ad_resolve(url, key)
+                # Save for Continue Watching
+                label = args.get('label', [''])[0]
+                ADDON.setSetting('last_played', json.dumps({'url': url, 'label': label}))
                 li = xbmcgui.ListItem(path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
             except AllDebridError as e:

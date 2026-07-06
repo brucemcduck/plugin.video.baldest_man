@@ -7,6 +7,12 @@
         <hidden>true</hidden>
       </constraints>
     </setting>
+    <setting id="last_played" type="text" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+        <hidden>true</hidden>
+      </constraints>
+    </setting>
     <setting label="Authorize Device" type="action"
              action="RunPlugin(plugin://plugin.video.baldest_man/?mode=auth)"/>
   </category>
