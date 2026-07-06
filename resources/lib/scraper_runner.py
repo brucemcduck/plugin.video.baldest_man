@@ -83,7 +83,8 @@ def _worker_count():
         import xbmcaddon
         addon = xbmcaddon.Addon()
         val = addon.getSetting('scraper_workers')
-        return int(val) if val else DEFAULT_WORKERS
+        val = int(val) if val else DEFAULT_WORKERS
+        return max(1, min(20, val))
     except (ImportError, ValueError):
         return DEFAULT_WORKERS
 
