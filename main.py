@@ -163,12 +163,6 @@ if mode is None:
         xbmcplugin.addDirectoryItem(addon_handle, url,
                                     xbmcgui.ListItem(label), isFolder=True)
 
-    key = api_key()
-    auth_label = "AllDebrid ✓" if key else "Authorize AllDebrid"
-    url = build_url({'mode': 'auth'})
-    xbmcplugin.addDirectoryItem(addon_handle, url,
-                                xbmcgui.ListItem(auth_label), isFolder=False)
-
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 # --- Search: TMDB lookup ---
