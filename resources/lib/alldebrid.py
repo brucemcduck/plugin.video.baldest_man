@@ -2,7 +2,7 @@
 import requests
 from requests.exceptions import RequestException
 
-API_BASE = "https://api.alldebrid.com/v4/"
+API = "https://api.alldebrid.com/v4"
 
 
 class AllDebridError(Exception):
@@ -28,7 +28,7 @@ def resolve(url, api_key):
     try:
         # Step 1: Upload magnet/torrent to AllDebrid
         upload_resp = requests.post(
-            API_BASE + "magnet/upload",
+            API + "/magnet/upload",
             data={"agent": "plugin.video.baldest_man", "apikey": api_key, "magnets[]": url},
             timeout=30,
         )
@@ -43,9 +43,9 @@ def resolve(url, api_key):
         if not magnet_id:
             raise AllDebridError("No magnet ID in response")
 
-        # Step 3: Get status — AllDebrid may need time to process
+        # Step 3: Get status via v4.1 (v4/magnet/status deprecated since 10/2024)
         status_resp = requests.get(
-            API_BASE + "magnet/status",
+            API + ".1/magnet/status",
             params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
             timeout=30,
         )
@@ -55,21 +55,18 @@ def resolve(url, api_key):
         if not magnets:
             raise AllDebridError("No magnet info in status response")
         magnet_info = magnets[0]
-        status = magnet_info.get("status", "")
+        magnet_status = magnet_info.get("status", "")
 
-        if status == "Ready":
-            links = magnet_info.get("links", [])
-            if not links:
-                raise AllDebridError("Magnet ready but no links returned")
-            # Return the first link's streamable URL — unlock it
-            first_link = links[0].get("link", "")
-            if not first_link:
-                raise AllDebridError("Link entry missing URL")
+        if magnet_status == "Ready":
+            # v4.1: files are a nested tree — find first downloadable file
+            file_link = _find_file_link(magnet_info.get("files", []))
+            if not file_link:
+                raise AllDebridError("Magnet ready but no files returned")
 
             # Unlock the link to get the final direct URL
             unlock_resp = requests.get(
-                API_BASE + "link/unlock",
-                params={"agent": "plugin.video.baldest_man", "apikey": api_key, "link": first_link},
+                API + "/link/unlock",
+                params={"agent": "plugin.video.baldest_man", "apikey": api_key, "link": file_link},
                 timeout=30,
             )
             unlock_data = _check_response(unlock_resp)
@@ -78,14 +75,28 @@ def resolve(url, api_key):
                 raise AllDebridError("Failed to unlock link")
             return direct_url
 
-        elif status == "Downloading" or status == "Processing":
-            # ponytail: no polling loop — magnet just uploaded, give it a moment
-            # If real scrapers hit this, add a retry with backoff
+        elif magnet_status == "Downloading" or magnet_status == "Processing":
             raise AllDebridError("Magnet still processing, try again")
         else:
-            raise AllDebridError("Unknown magnet status: {}".format(status))
+            raise AllDebridError("Unknown magnet status: {}".format(magnet_status))
     except RequestException as e:
         raise AllDebridError("API request failed: {}".format(str(e)))
+
+
+def _find_file_link(files):
+    """Find first downloadable file link in AllDebrid's v4.1 nested file tree."""
+    if isinstance(files, list):
+        for f in files:
+            if isinstance(f, dict):
+                # Direct file: {"n": "name", "s": size, "l": "url"}
+                if "l" in f and f["l"]:
+                    return f["l"]
+                # Nested folder: {"n": "folder", "files": [...]}
+                if "files" in f:
+                    result = _find_file_link(f["files"])
+                    if result:
+                        return result
+    return None
 
 
 def _check_response(resp):
