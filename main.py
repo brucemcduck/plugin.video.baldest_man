@@ -1,4 +1,5 @@
 """plugin.video.baldest_man — multi-site video scraper with AllDebrid + TMDB metadata."""
+import re
 import sys
 import urllib.parse
 # pyrefly: ignore [missing-import]
@@ -46,34 +47,67 @@ def set_info(li, item, is_folder):
 
 
 def label_result(item):
-    """Format scrape result: Ep 05 Title [1080p] ⬆12 · 1.2GB"""
-    if item.get('episode') and item.get('title'):
-        parts = [f"Ep {item['episode']}", item['title']]
+    """Format scrape result label: S01E05 · Episode Name  or  Movie Title (1999)."""
+    if item.get('episode'):
+        parts = [f"S{int(item.get('season', '01')):02d}E{int(item['episode']):02d}"]
+        if item.get('title'):
+            parts.append(item['title'])
     elif item.get('is_movie'):
         parts = [item['show_title']]
     else:
         parts = [item.get('title', item['show_title'])]
-
-    if item.get('quality'):
-        parts.append(f"[{item['quality']}]")
-
-    extras = []
-    if item.get('seeders'):
-        extras.append(f"⬆{item['seeders']}")
-    if item.get('size'):
-        extras.append(item['size'])
-    if extras:
-        parts.append(' · '.join(extras))
-
-    return ' '.join(parts)
+    return ' · '.join(parts)
 
 
-def add_scrape_result(item):
-    """Add a playable scrape result to the directory listing."""
+def _parse_size_bytes(size_str):
+    """Parse human-readable size string to bytes for Kodi. Returns int or 0."""
+    m = re.match(r'([\d.]+)\s*(GB|MB|GiB|MiB|KB|B)', str(size_str), re.IGNORECASE)
+    if not m:
+        return 0
+    val = float(m.group(1))
+    unit = m.group(2).upper()
+    if unit in ('GB', 'GIB'):
+        return int(val * 1073741824)
+    if unit in ('MB', 'MIB'):
+        return int(val * 1048576)
+    if unit == 'KB':
+        return int(val * 1024)
+    return int(val)
+
+
+def add_scrape_result(item, poster_url=None):
+    """Add a playable scrape result with structured metadata and artwork."""
     label = label_result(item)
     li = xbmcgui.ListItem(label)
-    li.setInfo('video', {'title': label})
     li.setProperty('IsPlayable', 'true')
+
+    info = {
+        'title': label,
+        'mediatype': 'episode' if item.get('episode') else 'movie',
+    }
+
+    # Plot: stats shown in Media Info view
+    plot_parts = []
+    if item.get('quality'):
+        plot_parts.append(item['quality'])
+    if item.get('seeders'):
+        plot_parts.append(f"⬆{item['seeders']} seeders")
+    if item.get('size'):
+        plot_parts.append(item['size'])
+    plot_parts.append(f"source: {item.get('site', '?')}")
+    info['plot'] = ' · '.join(plot_parts)
+
+    # Size in bytes (Kodi auto-formats in UI)
+    size_str = item.get('size', '')
+    if size_str:
+        info['size'] = _parse_size_bytes(size_str)
+
+    li.setInfo('video', info)
+
+    # Poster from TMDB parent show/movie
+    if poster_url:
+        li.setArt({'poster': poster_url, 'thumb': poster_url})
+
     play_url = build_url({'mode': 'play', 'url': item['url'],
                           'type': item.get('type', 'direct')})
     xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
@@ -245,8 +279,19 @@ elif mode[0] == 'scrape':
         except Exception:
             pass
 
+    # TMDB poster for artwork on every result
+    poster_url = None
+    if show_id:
+        try:
+            poster_url = tmdb.get_poster(int(show_id), tmdb_api_key(),
+                                         is_movie=(content_type == 'movies'))
+        except Exception:
+            pass
+
     for r in results:
-        add_scrape_result(r)
+        if season_number and 'episode' in r and 'season' not in r:
+            r['season'] = season_number
+        add_scrape_result(r, poster_url)
 
     if not results:
         label = "No sources found"
