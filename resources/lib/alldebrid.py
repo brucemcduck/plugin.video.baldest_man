@@ -38,8 +38,10 @@ def resolve(url, api_key):
         magnets = upload_data.get("data", {}).get("magnets", [])
         if not magnets:
             raise AllDebridError("No magnet returned from upload")
+        # v4.1 may return dict or list
+        magnet_info = next(iter(magnets.values())) if isinstance(magnets, dict) else magnets[0]
 
-        magnet_id = magnets[0].get("id")
+        magnet_id = magnet_info.get("id")
         if not magnet_id:
             raise AllDebridError("No magnet ID in response")
 
@@ -54,7 +56,8 @@ def resolve(url, api_key):
         magnets = status_data.get("data", {}).get("magnets", [])
         if not magnets:
             raise AllDebridError("No magnet info in status response")
-        magnet_info = magnets[0]
+        # v4.1 may return dict or list
+        magnet_info = next(iter(magnets.values())) if isinstance(magnets, dict) else magnets[0]
         magnet_status = magnet_info.get("status", "")
 
         if magnet_status == "Ready":
