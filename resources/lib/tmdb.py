@@ -109,6 +109,18 @@ def get_imdb_id(show_id, api_key, is_movie=False):
         return None
 
 
+def get_poster(show_id, api_key, is_movie=False):
+    """Return poster URL for a show/movie, or None on failure."""
+    media_type = "movie" if is_movie else "tv"
+    try:
+        data = _tmdb_get(f"{BASE}/{media_type}/{show_id}",
+                         {"api_key": api_key})
+        path = data.get("poster_path")
+        return IMAGE_BASE + path if path else None
+    except Exception:
+        return None
+
+
 def get_episodes(show_id, season_number, api_key, language="en"):
     """Get episodes for a season. Returns list of {episode_number, name, overview, still_url}."""
     try:
