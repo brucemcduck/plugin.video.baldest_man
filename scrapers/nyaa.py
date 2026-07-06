@@ -81,6 +81,13 @@ def search(query):
         if quality:
             result["quality"] = quality
 
+        if size_cell:
+            size_text = size_cell.get_text(strip=True)
+            if size_text:
+                result["size"] = size_text
+        if seeders:
+            result["seeders"] = seeders
+
         results.append(result)
 
     return results

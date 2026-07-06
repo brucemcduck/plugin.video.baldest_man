@@ -72,6 +72,16 @@ def search(query):
             elif gb > 0.3:
                 result["quality"] = "480p"
 
+        # size and seeders from eztv.re API
+        if size_bytes > 0:
+            if size_bytes >= 1073741824:
+                result["size"] = f"{size_bytes / 1073741824:.1f} GB"
+            elif size_bytes >= 1048576:
+                result["size"] = f"{size_bytes / 1048576:.0f} MB"
+        seeds = t.get("seeds", 0)
+        if seeds:
+            result["seeders"] = seeds
+
         results.append(result)
 
     return results

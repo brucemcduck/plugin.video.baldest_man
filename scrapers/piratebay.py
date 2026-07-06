@@ -49,17 +49,19 @@ def search(query):
         if not name or not info_hash:
             continue
 
-        magnet = (f"magnet:?xt=urn:btih:{info_hash}"
-                  f"&dn={requests.utils.quote(name)}")
-
-        result = _parse(name, magnet)
+        result = _parse(item)
         result["site"] = SITE_NAME
         results.append(result)
 
     return results
 
 
-def _parse(title, magnet):
+def _parse(item):
+    title = item.get("name", "").strip()
+    info_hash = item.get("info_hash", "")
+    magnet = (f"magnet:?xt=urn:btih:{info_hash}"
+              f"&dn={requests.utils.quote(title)}")
+
     quality = None
     qm = _QUALITY_RE.search(title)
     if qm:
@@ -91,5 +93,22 @@ def _parse(title, magnet):
 
     if quality:
         result["quality"] = quality
+
+    # size and seeders from apibay.org response
+    try:
+        b = int(item.get("size", "0"))
+        if b > 0:
+            if b >= 1073741824:
+                result["size"] = f"{b / 1073741824:.1f} GB"
+            elif b >= 1048576:
+                result["size"] = f"{b / 1048576:.0f} MB"
+    except (ValueError, TypeError):
+        pass
+    try:
+        s = int(item.get("seeders", "0"))
+        if s > 0:
+            result["seeders"] = s
+    except (ValueError, TypeError):
+        pass
 
     return result
