@@ -11,6 +11,7 @@ import xbmcplugin
 from resources.lib import scraper_runner, tmdb
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
 from resources.lib.alldebrid_auth import get_pin, poll_for_key, AuthError
+from scrapers import torrentio
 
 ADDON = xbmcaddon.Addon()
 base_url = sys.argv[0]
@@ -142,6 +143,7 @@ elif mode[0] == 'search':
             for m in movies:
                 url = build_url({'mode': 'scrape', 'show_title': m['title'],
                                  'year': m.get('year', ''),
+                                 'show_id': str(m['id']),
                                  'content_type': 'movies'})
                 label = f"{m['title']} ({m.get('year', '')})"
                 li = xbmcgui.ListItem(label)
@@ -190,6 +192,7 @@ elif mode[0] == 'episodes':
     episodes = tmdb.get_episodes(show_id, season_number, tmdb_api_key(), tmdb_lang())
     for ep in episodes:
         url = build_url({'mode': 'scrape', 'show_title': show_title,
+                         'show_id': str(show_id),
                          'season_number': str(season_number),
                          'episode_number': str(ep['episode_number']),
                          'episode_title': ep.get('name', ''),
@@ -213,6 +216,7 @@ elif mode[0] == 'episodes':
 # --- Scrape: run scrapers, display results ---
 elif mode[0] == 'scrape':
     show_title = args.get('show_title', [''])[0]
+    show_id = args.get('show_id', [None])[0]
     year = args.get('year', [''])[0]
     season_number = args.get('season_number', [None])[0]
     episode_number = args.get('episode_number', [None])[0]
@@ -224,6 +228,22 @@ elif mode[0] == 'scrape':
         query = f"{show_title} {year}".strip() if year else show_title
 
     results = scraper_runner.search_all(query, content_type=content_type)
+
+    # Torrentio via IMDB ID — covers 24+ trackers in one call
+    if show_id:
+        try:
+            is_movie = content_type == 'movies'
+            imdb_id = tmdb.get_imdb_id(int(show_id), tmdb_api_key(), is_movie=is_movie)
+            if imdb_id:
+                if is_movie:
+                    tr = torrentio.search_imdb(imdb_id, is_movie=True)
+                elif season_number and episode_number:
+                    tr = torrentio.search_imdb(imdb_id, int(season_number), int(episode_number))
+                else:
+                    tr = []
+                results.extend(tr)
+        except Exception:
+            pass
 
     for r in results:
         add_scrape_result(r)

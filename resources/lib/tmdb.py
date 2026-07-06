@@ -98,6 +98,17 @@ def get_seasons(show_id, api_key, language="en"):
     return results
 
 
+def get_imdb_id(show_id, api_key, is_movie=False):
+    """Get IMDB ID for a show or movie. Returns string like 'tt2575988' or None."""
+    media_type = "movie" if is_movie else "tv"
+    try:
+        data = _tmdb_get(f"{BASE}/{media_type}/{show_id}/external_ids",
+                         {"api_key": api_key})
+        return data.get("imdb_id") or None
+    except (requests.RequestException, ValueError, KeyError):
+        return None
+
+
 def get_episodes(show_id, season_number, api_key, language="en"):
     """Get episodes for a season. Returns list of {episode_number, name, overview, still_url}."""
     try:
