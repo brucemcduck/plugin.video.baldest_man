@@ -41,4 +41,25 @@
       </constraints>
     </setting>
   </category>
+  <category label="Trakt">
+    <setting id="trakt_client_id" type="text" label="Client ID" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+      </constraints>
+    </setting>
+    <setting id="trakt_access_token" type="text" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+        <hidden>true</hidden>
+      </constraints>
+    </setting>
+    <setting id="trakt_refresh_token" type="text" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+        <hidden>true</hidden>
+      </constraints>
+    </setting>
+    <setting label="Authorize Device" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=auth_trakt)"/>
+  </category>
 </settings>

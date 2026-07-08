@@ -14,6 +14,7 @@ import xbmcplugin
 
 from resources.lib import scraper_runner, tmdb
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
+from resources.lib.trakt import get_device_code, poll_for_token, TraktError
 from scrapers import torrentio
 
 ADDON = xbmcaddon.Addon()
@@ -488,6 +489,39 @@ elif mode[0] == 'scrape':
             pass
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- Auth: Trakt device OAuth ---
+elif mode[0] == 'auth_trakt':
+    client_id = ADDON.getSetting('trakt_client_id')
+    if not client_id:
+        notify('Trakt Client ID not set')
+    else:
+        try:
+            data = get_device_code(client_id)
+        except TraktError as e:
+            notify("Trakt: " + str(e))
+        else:
+            msg = ("1. Go to: [COLOR skyblue]{}[/COLOR]\n"
+                   "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
+                   "3. Press OK after authorizing").format(
+                       data.get("verification_url", "https://trakt.tv/activate"),
+                       data.get("user_code", ""))
+            xbmcgui.Dialog().ok("Trakt Authorization", msg)
+
+            pdlg = xbmcgui.DialogProgress()
+            pdlg.create("Trakt", "Waiting for authorization...")
+            try:
+                token = poll_for_token(client_id, data["device_code"],
+                                       interval=data.get("interval", 5))
+                ADDON.setSetting('trakt_access_token', token["access_token"])
+                ADDON.setSetting('trakt_refresh_token', token["refresh_token"])
+                pdlg.close()
+                notify("Trakt authorized!")
+            except TraktError as e:
+                pdlg.close()
+                notify("Trakt: " + str(e))
+
+    xbmcplugin.endOfDirectory(addon_handle)
 
 # --- Play: resolve if torrent, hand to Kodi ---
 elif mode[0] == 'play':
