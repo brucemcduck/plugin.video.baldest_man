@@ -73,12 +73,10 @@ def set_info(li, item, is_folder):
 
 def label_result(item):
     """Format scrape result label: Episode Name  or  Movie Title."""
-    if item.get('tmdb_episode_title'):
-        return item['tmdb_episode_title']
     if item.get('episode'):
         return item.get('title') or f"S{int(item.get('season', '01')):02d}E{int(item['episode']):02d}"
     elif item.get('is_movie'):
-        return item.get('tmdb_show_title') or item.get('show_title', '')
+        return item.get('show_title', '')
     else:
         return item.get('title', item.get('show_title', ''))
 
@@ -99,8 +97,9 @@ def _parse_size_bytes(size_str):
     return int(val)
 
 
-def add_scrape_result(item, poster_url=None):
-    """Add a playable scrape result with structured metadata and artwork."""
+def add_scrape_result(item, poster_url=None, play_label=None):
+    """Add a playable scrape result with structured metadata and artwork.
+    play_label overrides the list label for the player title (e.g. TMDB name)."""
     label = label_result(item)
     li = xbmcgui.ListItem(label)
     li.setProperty('IsPlayable', 'true')
@@ -134,7 +133,7 @@ def add_scrape_result(item, poster_url=None):
 
     play_url = build_url({'mode': 'play', 'url': item['url'],
                           'type': item.get('type', 'direct'),
-                          'label': label})
+                          'label': play_label if play_label else label})
     xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
 
 
@@ -317,6 +316,7 @@ elif mode[0] == 'scrape':
     year = args.get('year', [''])[0]
     season_number = args.get('season_number', [None])[0]
     episode_number = args.get('episode_number', [None])[0]
+    episode_title = args.get('episode_title', [''])[0]
     content_type = args.get('content_type', ['all'])[0]
 
     if season_number and episode_number:
@@ -357,10 +357,8 @@ elif mode[0] == 'scrape':
     for r in results:
         if season_number and 'episode' in r and 'season' not in r:
             r['season'] = season_number
-        r['tmdb_show_title'] = show_title
-        if episode_number and episode_title:
-            r['tmdb_episode_title'] = episode_title
-        add_scrape_result(r, poster_url)
+        pl = episode_title if episode_number and episode_title else show_title
+        add_scrape_result(r, poster_url, play_label=pl)
 
     if not results:
         label = "No sources found"
