@@ -418,8 +418,7 @@ elif mode[0] == 'play':
                     elif state == "ready":
                         pdlg.update(100, "Ready!")
                     else:
-                        pdlg.update(pct, "Downloading...",
-                                    "ETA: ~{}s remaining".format(eta))
+                        pdlg.update(pct, "Downloading... ~{}s".format(eta))
 
                 direct_url = ad_resolve(url, key, timeout=timeout,
                                         cancel_check=pdlg.iscanceled,
