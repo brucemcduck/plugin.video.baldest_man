@@ -20,11 +20,25 @@ def _log(msg):
         print("alldebrid: " + str(msg), file=sys.stderr)
 
 
-def resolve(url, api_key, timeout=120, poll_interval=2, cancel_check=None):
+def _fire_progress(cb, state, timeout, elapsed):
+    if not cb:
+        return
+    if state == "uploading":
+        cb(state, 0, timeout)
+    elif state == "ready":
+        cb(state, 100, 0)
+    else:
+        pct = min(98, int(elapsed / timeout * 100))
+        eta = max(0, int(timeout - elapsed))
+        cb(state, pct, eta)
+
+
+def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progress_callback=None):
     """Resolve a magnet link or torrent URL to a direct streamable URL.
 
     Polls AllDebrid until the magnet is ready, timing out after `timeout` seconds.
     If cancel_check is provided, it's called each iteration — return True to abort.
+    If progress_callback is provided, it's called as progress_callback(state, pct, eta).
     """
     if not api_key:
         raise AllDebridError("API key not set")
@@ -43,6 +57,7 @@ def resolve(url, api_key, timeout=120, poll_interval=2, cancel_check=None):
         if not magnet_id:
             raise AllDebridError("No magnet ID in upload response")
         _log("magnet_id=" + str(magnet_id))
+        _fire_progress(progress_callback, "uploading", timeout, 0)
 
         deadline = time.time() + timeout
         last_status = ""
@@ -77,11 +92,13 @@ def resolve(url, api_key, timeout=120, poll_interval=2, cancel_check=None):
                 raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
 
             elapsed = int(time.time() + poll_interval - deadline + timeout)
+            _fire_progress(progress_callback, "downloading", timeout, elapsed)
             if magnet_status != last_status:
                 _log("magnet[{}] status={} code={} elapsed={}s".format(magnet_id, magnet_status, status_code, elapsed))
                 last_status = magnet_status
 
             if magnet_status in ("Ready", "4") or status_code == 4:
+                _fire_progress(progress_callback, "ready", timeout, 0)
                 file_link = _find_file_link(magnet_info.get("files", []))
                 if not file_link:
                     raise AllDebridError("Magnet ready but no files returned")
