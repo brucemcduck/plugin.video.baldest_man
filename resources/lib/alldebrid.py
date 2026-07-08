@@ -1,4 +1,5 @@
 """AllDebrid API v4.1 resolver — converts magnet/torrent links to direct URLs."""
+import time
 import requests
 from requests.exceptions import RequestException
 
@@ -19,13 +20,16 @@ def _log(msg):
         print("alldebrid: " + str(msg), file=sys.stderr)
 
 
-def resolve(url, api_key):
-    """Resolve a magnet link or torrent URL to a direct streamable URL."""
+def resolve(url, api_key, timeout=120, poll_interval=2, cancel_check=None):
+    """Resolve a magnet link or torrent URL to a direct streamable URL.
+
+    Polls AllDebrid until the magnet is ready, timing out after `timeout` seconds.
+    If cancel_check is provided, it's called each iteration — return True to abort.
+    """
     if not api_key:
         raise AllDebridError("API key not set")
 
     try:
-        # Step 1: Upload magnet/torrent to AllDebrid
         upload_resp = requests.post(
             API + "/magnet/upload",
             data={"agent": "plugin.video.baldest_man", "apikey": api_key, "magnets[]": url},
@@ -34,68 +38,69 @@ def resolve(url, api_key):
         upload_data = _check_response(upload_resp)
         _log("upload response: " + str(upload_data.get("data", {}).get("magnets", "?"))[:500])
 
-        # Step 2: Get the magnet/torrent ID
         magnets = upload_data.get("data", {}).get("magnets", [])
         magnet_id = _extract_id(magnets)
         if not magnet_id:
             raise AllDebridError("No magnet ID in upload response")
         _log("magnet_id=" + str(magnet_id))
 
-        # Step 3: Get status via v4.1
-        status_resp = requests.get(
-            API + ".1/magnet/status",
-            params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
-            timeout=30,
-        )
-        status_data = _check_response(status_resp)
-        _log("status response: " + str(status_data.get("data", {}))[:500])
+        deadline = time.time() + timeout
+        last_status = ""
 
-        magnets = status_data.get("data", {}).get("magnets", [])
-        if not magnets:
-            raise AllDebridError("No magnet info in status response")
-        _log("status magnets type=" + type(magnets).__name__ + " value=" + str(magnets)[:500])
+        while time.time() < deadline:
+            if cancel_check and cancel_check():
+                raise AllDebridError("Cancelled by user")
+            time.sleep(poll_interval)
 
-        # v4.1 with ?id=X returns the magnet object directly as the dict value,
-        # not nested inside another collection.
-        if isinstance(magnets, dict) and "status" in magnets:
-            magnet_info = magnets
-        else:
-            magnet_info = _first_item(magnets)
-        _log("magnet_info type=" + type(magnet_info).__name__ + " keys=" + str(list(magnet_info.keys()) if isinstance(magnet_info, dict) else 'N/A')[:200])
-
-        if isinstance(magnet_info, dict):
-            magnet_status = magnet_info.get("status", "")
-            status_code = magnet_info.get("statusCode", -1)
-        elif isinstance(magnet_info, (int, str)):
-            magnet_status = str(magnet_info)
-            status_code = int(magnet_info) if str(magnet_info).isdigit() else -1
-        else:
-            raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
-
-        _log("magnet_status=" + magnet_status + " status_code=" + str(status_code))
-
-        if magnet_status in ("Ready", "4") or status_code == 4:
-            # v4.1 with ?id=X returns files inline in status response
-            file_link = _find_file_link(magnet_info.get("files", []))
-            if not file_link:
-                raise AllDebridError("Magnet ready but no files returned")
-
-            # Unlock the link to get the final direct URL
-            unlock_resp = requests.get(
-                API + "/link/unlock",
-                params={"agent": "plugin.video.baldest_man", "apikey": api_key, "link": file_link},
+            status_resp = requests.get(
+                API + ".1/magnet/status",
+                params={"agent": "plugin.video.baldest_man", "apikey": api_key, "id": magnet_id},
                 timeout=30,
             )
-            unlock_data = _check_response(unlock_resp)
-            direct_url = unlock_data.get("data", {}).get("link", "")
-            if not direct_url:
-                raise AllDebridError("Failed to unlock link")
-            return direct_url
+            status_data = _check_response(status_resp)
+            magnets = status_data.get("data", {}).get("magnets", [])
+            if not magnets:
+                raise AllDebridError("No magnet info in status response")
 
-        elif magnet_status in ("Downloading", "Processing", "0", "1") or status_code in (0, 1):
-            raise AllDebridError("Magnet still processing, try again")
-        else:
-            raise AllDebridError("Magnet failed — status: {} code: {}".format(magnet_status, status_code))
+            if isinstance(magnets, dict) and "status" in magnets:
+                magnet_info = magnets
+            else:
+                magnet_info = _first_item(magnets)
+
+            if isinstance(magnet_info, dict):
+                magnet_status = magnet_info.get("status", "")
+                status_code = magnet_info.get("statusCode", -1)
+            elif isinstance(magnet_info, (int, str)):
+                magnet_status = str(magnet_info)
+                status_code = int(magnet_info) if str(magnet_info).isdigit() else -1
+            else:
+                raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
+
+            elapsed = int(time.time() + poll_interval - deadline + timeout)
+            if magnet_status != last_status:
+                _log("magnet[{}] status={} code={} elapsed={}s".format(magnet_id, magnet_status, status_code, elapsed))
+                last_status = magnet_status
+
+            if magnet_status in ("Ready", "4") or status_code == 4:
+                file_link = _find_file_link(magnet_info.get("files", []))
+                if not file_link:
+                    raise AllDebridError("Magnet ready but no files returned")
+
+                unlock_resp = requests.get(
+                    API + "/link/unlock",
+                    params={"agent": "plugin.video.baldest_man", "apikey": api_key, "link": file_link},
+                    timeout=30,
+                )
+                unlock_data = _check_response(unlock_resp)
+                direct_url = unlock_data.get("data", {}).get("link", "")
+                if not direct_url:
+                    raise AllDebridError("Failed to unlock link")
+                return direct_url
+
+            elif magnet_status not in ("Downloading", "Processing", "0", "1") and status_code not in (0, 1):
+                raise AllDebridError("Magnet failed — status: {} code: {}".format(magnet_status, status_code))
+
+        raise AllDebridError("Magnet download timed out after {}s".format(timeout))
     except RequestException as e:
         raise AllDebridError("API request failed: {}".format(str(e)))
 

@@ -385,7 +385,7 @@ elif mode[0] == 'auth':
         pdlg = xbmcgui.DialogProgress()
         pdlg.create("AllDebrid", "Waiting for authorization...")
         try:
-            apikey = poll_for_key(pin, check_token)
+            apikey = poll_for_key(pin, check_token, cancel_check=pdlg.iscanceled)
             ADDON.setSetting('alldebrid_api_key', apikey)
             pdlg.close()
             notify("AllDebrid authorized!")
@@ -407,7 +407,8 @@ elif mode[0] == 'play':
             xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
         else:
             try:
-                direct_url = ad_resolve(url, key)
+                timeout = int(ADDON.getSetting('magnet_timeout') or 120)
+                direct_url = ad_resolve(url, key, timeout=timeout)
                 # Save for Continue Watching
                 label = args.get('label', [''])[0]
                 ADDON.setSetting('last_played', json.dumps({'url': url, 'label': label}))

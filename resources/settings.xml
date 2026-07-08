@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <settings>
   <category label="AllDebrid">
+    <setting id="magnet_timeout" type="integer" label="Magnet download timeout (seconds)" default="120">
+      <constraints>
+        <minimum>30</minimum>
+        <maximum>600</maximum>
+      </constraints>
+    </setting>
     <setting id="alldebrid_api_key" type="text" label="API Key" default="">
       <constraints>
         <allowempty>true</allowempty>

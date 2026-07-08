@@ -34,12 +34,18 @@ def get_pin():
     )
 
 
-def poll_for_key(pin, check_token, max_wait=120):
-    """Poll until user authorizes. Returns API key or raises AuthError."""
+def poll_for_key(pin, check_token, max_wait=120, cancel_check=None):
+    """Poll until user authorizes. Returns API key or raises AuthError.
+
+    If cancel_check is provided, it's called each iteration. Return True to abort.
+    """
     deadline = time.time() + min(max_wait, 600)
     params = {"pin": pin, "check": check_token}
 
     while time.time() < deadline:
+        if cancel_check and cancel_check():
+            raise AuthError("Cancelled by user")
+
         try:
             resp = requests.post(API + "/pin/check", data=params,
                                  timeout=TIMEOUT, headers=HEADERS)
