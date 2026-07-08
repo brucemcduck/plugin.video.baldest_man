@@ -72,16 +72,14 @@ def set_info(li, item, is_folder):
 
 
 def label_result(item):
-    """Format scrape result label: S01E05 · Episode Name  or  Movie Title (1999)."""
+    """Format scrape result label: Episode Name  or  Movie Title."""
     if item.get('episode'):
-        parts = [f"S{int(item.get('season', '01')):02d}E{int(item['episode']):02d}"]
-        if item.get('title'):
-            parts.append(item['title'])
+        parts = [item.get('title', '')]
     elif item.get('is_movie'):
         parts = [item['show_title']]
     else:
         parts = [item.get('title', item['show_title'])]
-    return ' · '.join(parts)
+    return ' · '.join(filter(None, parts))
 
 
 def _parse_size_bytes(size_str):
