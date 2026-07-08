@@ -418,6 +418,18 @@ elif mode[0] == 'scrape':
     finally:
         pdlg.close()
 
+    # Filter by seeder quality: at least 1 seeder per 10GB of file size
+    def _seeder_ok(r):
+        s = r.get('seeders')
+        if s is None:
+            return True
+        size_bytes = _parse_size_bytes(r.get('size', ''))
+        if not size_bytes:
+            return True
+        return s * 10737418240 >= size_bytes
+
+    all_results = [r for r in all_results if _seeder_ok(r)]
+
     # Sort by file size descending (largest first)
     all_results.sort(key=lambda r: _parse_size_bytes(r.get('size', '')), reverse=True)
 
