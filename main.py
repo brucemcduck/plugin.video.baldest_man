@@ -14,7 +14,7 @@ import xbmcplugin
 
 from resources.lib import scraper_runner, tmdb
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
-from resources.lib.trakt import get_device_code, poll_for_token, TraktError
+from resources.lib.trakt import get_device_code, poll_for_token, scrobble_start, TraktError
 from scrapers import torrentio
 
 ADDON = xbmcaddon.Addon()
@@ -373,6 +373,7 @@ elif mode[0] == 'scrape':
 
         all_results = []
         poster_url = None
+        imdb_id = None
         pending = 0
         done = 0
 
@@ -459,6 +460,8 @@ elif mode[0] == 'scrape':
 
         meta = {'show_title': show_title, 'show_id': show_id,
                 'content_type': content_type}
+        if imdb_id:
+            meta['imdb_id'] = imdb_id
         if season_number:
             meta['season'] = season_number
         if episode_number:
@@ -573,6 +576,21 @@ elif mode[0] == 'play':
                 ADDON.setSetting('last_played', json.dumps(last))
                 li = xbmcgui.ListItem(label, path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
+
+                # Scrobble start to Trakt
+                access_token = ADDON.getSetting('trakt_access_token')
+                if access_token:
+                    imdb = args.get('imdb_id', [None])[0]
+                    if imdb:
+                        try:
+                            s = args.get('season', [None])[0]
+                            ep = args.get('episode', [None])[0]
+                            if s and ep:
+                                scrobble_start(access_token, imdb, int(s), int(ep))
+                            else:
+                                scrobble_start(access_token, imdb)
+                        except Exception:
+                            pass
             except AllDebridError as e:
                 if pdlg is not None:
                     try:
