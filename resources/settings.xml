@@ -19,8 +19,6 @@
         <hidden>true</hidden>
       </constraints>
     </setting>
-    <setting label="Authorize Device" type="action"
-             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=auth)"/>
   </category>
   <category label="TMDB">
     <setting id="tmdb_api_key" type="text" label="API Key" default="f090bb54758cabf231fb605d3e3e0468">

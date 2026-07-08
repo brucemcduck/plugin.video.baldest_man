@@ -14,7 +14,6 @@ import xbmcplugin
 
 from resources.lib import scraper_runner, tmdb
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
-from resources.lib.alldebrid_auth import get_pin, poll_for_key, AuthError
 from scrapers import torrentio
 
 ADDON = xbmcaddon.Addon()
@@ -368,32 +367,6 @@ elif mode[0] == 'scrape':
         xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
-
-# --- Auth: AllDebrid PIN-based device authorization ---
-elif mode[0] == 'auth':
-    try:
-        pin, check_token, user_url, expires = get_pin()
-    except AuthError as e:
-        notify("AllDebrid: " + str(e))
-    else:
-        msg = ("1. Go to: [COLOR skyblue]{}[/COLOR]\n"
-               "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
-               "3. Press OK after authorizing").format(
-                   user_url or "https://alldebrid.com/pin/", pin)
-        xbmcgui.Dialog().ok("AllDebrid Authorization", msg)
-
-        pdlg = xbmcgui.DialogProgress()
-        pdlg.create("AllDebrid", "Waiting for authorization...")
-        try:
-            apikey = poll_for_key(pin, check_token, cancel_check=pdlg.iscanceled)
-            ADDON.setSetting('alldebrid_api_key', apikey)
-            pdlg.close()
-            notify("AllDebrid authorized!")
-        except AuthError as e:
-            pdlg.close()
-            notify("AllDebrid: " + str(e))
-
-    xbmcplugin.endOfDirectory(addon_handle)
 
 # --- Play: resolve if torrent, hand to Kodi ---
 elif mode[0] == 'play':
