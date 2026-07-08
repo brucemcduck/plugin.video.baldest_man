@@ -399,6 +399,7 @@ elif mode[0] == 'auth':
 elif mode[0] == 'play':
     url = args.get('url', [''])[0]
     ep_type = args.get('type', ['direct'])[0]
+    label = args.get('label', [''])[0]
 
     if ep_type == 'torrent':
         key = api_key()
@@ -424,9 +425,8 @@ elif mode[0] == 'play':
                                         cancel_check=pdlg.iscanceled,
                                         progress_callback=progress_cb)
                 pdlg.close()
-                label = args.get('label', [''])[0]
                 ADDON.setSetting('last_played', json.dumps({'url': url, 'label': label}))
-                li = xbmcgui.ListItem(path=direct_url)
+                li = xbmcgui.ListItem(label, path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
             except AllDebridError as e:
                 if pdlg is not None:
@@ -437,5 +437,5 @@ elif mode[0] == 'play':
                 notify('AllDebrid: ' + str(e))
                 xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
     else:
-        li = xbmcgui.ListItem(path=url)
+        li = xbmcgui.ListItem(label, path=url)
         xbmcplugin.setResolvedUrl(addon_handle, True, li)
