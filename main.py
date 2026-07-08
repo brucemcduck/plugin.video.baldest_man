@@ -74,12 +74,11 @@ def set_info(li, item, is_folder):
 def label_result(item):
     """Format scrape result label: Episode Name  or  Movie Title."""
     if item.get('episode'):
-        parts = [item.get('title', '')]
+        return item.get('title') or f"S{int(item.get('season', '01')):02d}E{int(item['episode']):02d}"
     elif item.get('is_movie'):
-        parts = [item['show_title']]
+        return item['show_title']
     else:
-        parts = [item.get('title', item['show_title'])]
-    return ' · '.join(filter(None, parts))
+        return item.get('title', item.get('show_title', ''))
 
 
 def _parse_size_bytes(size_str):
@@ -293,7 +292,7 @@ elif mode[0] == 'episodes':
                          'episode_number': str(ep['episode_number']),
                          'episode_title': ep.get('name', ''),
                          'content_type': 'shows'})
-        label = f"{ep['episode_number']}. {ep.get('name', '')}"
+        label = ep.get('name', '')
         li = xbmcgui.ListItem(label)
         if ep.get('still_url'):
             li.setArt({'thumb': ep['still_url']})
