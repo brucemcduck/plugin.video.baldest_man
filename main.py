@@ -96,9 +96,10 @@ def _parse_size_bytes(size_str):
     return int(val)
 
 
-def add_scrape_result(item, poster_url=None, play_label=None):
+def add_scrape_result(item, poster_url=None, play_label=None, meta=None):
     """Add a playable scrape result with structured metadata and artwork.
-    play_label overrides the list label for the player title (e.g. TMDB name)."""
+    play_label overrides the list label for the player title (e.g. TMDB name).
+    meta is a dict of TMDB context saved for Continue Watching."""
     label = label_result(item)
     li = xbmcgui.ListItem(label)
     li.setProperty('IsPlayable', 'true')
@@ -130,9 +131,12 @@ def add_scrape_result(item, poster_url=None, play_label=None):
     if poster_url:
         li.setArt({'poster': poster_url, 'thumb': poster_url})
 
-    play_url = build_url({'mode': 'play', 'url': item['url'],
-                          'type': item.get('type', 'direct'),
-                          'label': play_label if play_label else label})
+    params = {'mode': 'play', 'url': item['url'],
+              'type': item.get('type', 'direct'),
+              'label': play_label if play_label else label}
+    if meta:
+        params.update(meta)
+    play_url = build_url(params)
     xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
 
 
@@ -167,32 +171,45 @@ if mode is None:
         xbmcplugin.addDirectoryItem(addon_handle, url,
                                     xbmcgui.ListItem(label), isFolder=True)
 
-    # Continue Watching — last played torrent
+    # Continue Watching — re-scrape last watched TMDB content
     last = ADDON.getSetting('last_played')
     if last:
         try:
             last_data = json.loads(last)
-            if last_data.get('url'):
+            if last_data.get('show_title'):
+                cw_label = "Continue Watching"
+                if last_data.get('episode_title'):
+                    cw_label = "Continue: " + last_data['episode_title']
+                elif last_data.get('show_title'):
+                    cw_label = "Continue: " + last_data['show_title']
                 url = build_url({'mode': 'continue_watching'})
                 xbmcplugin.addDirectoryItem(addon_handle, url,
-                                            xbmcgui.ListItem("Continue Watching"), isFolder=True)
+                                            xbmcgui.ListItem(cw_label), isFolder=True)
         except (json.JSONDecodeError, KeyError):
             pass
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
-# --- Continue Watching: show last played item ---
+# --- Continue Watching: re-scrape last watched ---
 elif mode[0] == 'continue_watching':
     last = ADDON.getSetting('last_played')
     if last:
         try:
             item = json.loads(last)
-            label = item.get('label', 'Last Played') or 'Last Played'
-            li = xbmcgui.ListItem(label)
-            li.setProperty('IsPlayable', 'true')
-            play_url = build_url({'mode': 'play', 'url': item['url'], 'type': 'torrent',
-                                  'label': label})
-            xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
+            meta = {'mode': 'scrape',
+                    'show_title': item.get('show_title', ''),
+                    'content_type': item.get('content_type', 'all')}
+            if item.get('show_id'):
+                meta['show_id'] = item['show_id']
+            if item.get('season'):
+                meta['season_number'] = item['season']
+            if item.get('episode'):
+                meta['episode_number'] = item['episode']
+            if item.get('episode_title'):
+                meta['episode_title'] = item['episode_title']
+            url = build_url(meta)
+            xbmcplugin.addDirectoryItem(addon_handle, url,
+                                        xbmcgui.ListItem("Re-scraping..."), isFolder=True)
         except (json.JSONDecodeError, KeyError):
             pass
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
@@ -404,11 +421,20 @@ elif mode[0] == 'scrape':
     # Sort by file size descending (largest first)
     all_results.sort(key=lambda r: _parse_size_bytes(r.get('size', '')), reverse=True)
 
+    meta = {'show_title': show_title, 'show_id': show_id,
+            'content_type': content_type}
+    if season_number:
+        meta['season'] = season_number
+    if episode_number:
+        meta['episode'] = episode_number
+    if episode_title:
+        meta['episode_title'] = episode_title
+
     for r in all_results:
         if season_number and 'episode' in r and 'season' not in r:
             r['season'] = season_number
         pl = episode_title if episode_number and episode_title else show_title
-        add_scrape_result(r, poster_url, play_label=pl)
+        add_scrape_result(r, poster_url, play_label=pl, meta=meta)
 
     if not all_results:
         label = "No sources found"
@@ -449,7 +475,24 @@ elif mode[0] == 'play':
                                         cancel_check=pdlg.iscanceled,
                                         progress_callback=progress_cb)
                 pdlg.close()
-                ADDON.setSetting('last_played', json.dumps({'url': url, 'label': label}))
+                last = {'show_title': args.get('show_title', [''])[0],
+                        'label': label}
+                show_id = args.get('show_id', [None])[0]
+                if show_id:
+                    last['show_id'] = show_id
+                ct = args.get('content_type', [''])[0]
+                if ct:
+                    last['content_type'] = ct
+                s = args.get('season', [None])[0]
+                if s:
+                    last['season'] = s
+                ep = args.get('episode', [None])[0]
+                if ep:
+                    last['episode'] = ep
+                et = args.get('episode_title', [''])[0]
+                if et:
+                    last['episode_title'] = et
+                ADDON.setSetting('last_played', json.dumps(last))
                 li = xbmcgui.ListItem(label, path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
             except AllDebridError as e:
