@@ -406,6 +406,7 @@ elif mode[0] == 'play':
             notify('AllDebrid API key not set')
             xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
         else:
+            pdlg = None
             try:
                 timeout = int(ADDON.getSetting('magnet_timeout') or 120)
                 pdlg = xbmcgui.DialogProgress()
@@ -417,8 +418,8 @@ elif mode[0] == 'play':
                     elif state == "ready":
                         pdlg.update(100, "Ready!")
                     else:
-                        msg = "Downloading — ~{}s remaining".format(eta)
-                        pdlg.update(pct, msg)
+                        pdlg.update(pct, "Downloading...",
+                                    "ETA: ~{}s remaining".format(eta))
 
                 direct_url = ad_resolve(url, key, timeout=timeout,
                                         cancel_check=pdlg.iscanceled,
@@ -429,10 +430,11 @@ elif mode[0] == 'play':
                 li = xbmcgui.ListItem(path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
             except AllDebridError as e:
-                try:
-                    pdlg.close()
-                except Exception:
-                    pass
+                if pdlg is not None:
+                    try:
+                        pdlg.close()
+                    except Exception:
+                        pass
                 notify('AllDebrid: ' + str(e))
                 xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
     else:

@@ -60,6 +60,7 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progr
         _fire_progress(progress_callback, "uploading", timeout, 0)
 
         deadline = time.time() + timeout
+        start_time = deadline - timeout
         last_status = ""
 
         while time.time() < deadline:
@@ -91,7 +92,7 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progr
             else:
                 raise AllDebridError("Unexpected magnet status format: {}".format(type(magnet_info).__name__))
 
-            elapsed = int(time.time() + poll_interval - deadline + timeout)
+            elapsed = int(time.time() - start_time)
             _fire_progress(progress_callback, "downloading", timeout, elapsed)
             if magnet_status != last_status:
                 _log("magnet[{}] status={} code={} elapsed={}s".format(magnet_id, magnet_status, status_code, elapsed))
