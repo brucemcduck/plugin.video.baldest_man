@@ -408,13 +408,31 @@ elif mode[0] == 'play':
         else:
             try:
                 timeout = int(ADDON.getSetting('magnet_timeout') or 120)
-                direct_url = ad_resolve(url, key, timeout=timeout)
-                # Save for Continue Watching
+                pdlg = xbmcgui.DialogProgress()
+                pdlg.create("Resolving magnet...", "Uploading magnet...")
+
+                def progress_cb(state, pct, eta):
+                    if state == "uploading":
+                        pdlg.update(0, "Uploading magnet...")
+                    elif state == "ready":
+                        pdlg.update(100, "Ready!")
+                    else:
+                        msg = "Downloading — ~{}s remaining".format(eta)
+                        pdlg.update(pct, msg)
+
+                direct_url = ad_resolve(url, key, timeout=timeout,
+                                        cancel_check=pdlg.iscanceled,
+                                        progress_callback=progress_cb)
+                pdlg.close()
                 label = args.get('label', [''])[0]
                 ADDON.setSetting('last_played', json.dumps({'url': url, 'label': label}))
                 li = xbmcgui.ListItem(path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
             except AllDebridError as e:
+                try:
+                    pdlg.close()
+                except Exception:
+                    pass
                 notify('AllDebrid: ' + str(e))
                 xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
     else:
