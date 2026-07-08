@@ -62,11 +62,19 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progr
         deadline = time.time() + timeout
         start_time = deadline - timeout
         last_status = ""
+        poll_count = 0
 
         while time.time() < deadline:
             if cancel_check and cancel_check():
                 raise AllDebridError("Cancelled by user")
             time.sleep(poll_interval)
+            poll_count += 1
+            if poll_count == 5:
+                poll_interval = 2
+            elif poll_count == 10:
+                poll_interval = 4
+            elif poll_count == 15:
+                poll_interval = 8
 
             status_resp = requests.get(
                 API + ".1/magnet/status",
