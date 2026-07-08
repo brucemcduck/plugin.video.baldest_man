@@ -323,43 +323,94 @@ elif mode[0] == 'scrape':
     else:
         query = f"{show_title} {year}".strip() if year else show_title
 
-    results = scraper_runner.search_all(query, content_type=content_type)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # Torrentio via IMDB ID — covers 24+ trackers in one call
-    if show_id:
-        try:
-            is_movie = content_type == 'movies'
-            imdb_id = tmdb.get_imdb_id(int(show_id), tmdb_api_key(), is_movie=is_movie)
-            if imdb_id:
-                if is_movie:
-                    tr = torrentio.search_imdb(imdb_id, is_movie=True)
-                elif season_number and episode_number:
-                    tr = torrentio.search_imdb(imdb_id, int(season_number), int(episode_number))
-                else:
-                    tr = []
-                results.extend(tr)
-        except Exception:
-            pass
+    is_movie = content_type == 'movies'
 
-    # TMDB poster for artwork on every result
+    pdlg = xbmcgui.DialogProgress()
+    pdlg.create("Searching for sources...", "Starting...")
+
+    all_results = []
     poster_url = None
-    if show_id:
-        try:
-            poster_url = tmdb.get_poster(int(show_id), tmdb_api_key(),
-                                         is_movie=(content_type == 'movies'))
-        except Exception:
-            pass
+    pending = 0
+    done = 0
+
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {}
+
+            # Future 1: all HTML scrapers
+            futures[pool.submit(scraper_runner.search_all, query, content_type)] = "scrapers"
+            pending += 1
+
+            # Future 2: IMDB ID lookup
+            if show_id:
+                futures[pool.submit(tmdb.get_imdb_id, int(show_id), tmdb_api_key(),
+                                    is_movie=is_movie)] = "imdb"
+                pending += 1
+
+            # Future 3: poster
+            if show_id:
+                futures[pool.submit(tmdb.get_poster, int(show_id), tmdb_api_key(),
+                                    is_movie=is_movie)] = "poster"
+                pending += 1
+
+            torrentio_future = None
+            for future in as_completed(futures):
+                if pdlg.iscanceled():
+                    break
+                source = futures[future]
+                done += 1
+                try:
+                    result = future.result()
+                except Exception:
+                    pdlg.update(int(done / pending * 100), "{} failed".format(source))
+                    continue
+
+                if source == "scrapers":
+                    all_results.extend(result)
+                    pdlg.update(int(done / pending * 100),
+                                "{} sources".format(len(all_results)))
+                elif source == "imdb" and result:
+                    imdb_id = result
+                    if is_movie:
+                        torrentio_future = pool.submit(torrentio.search_imdb, imdb_id,
+                                                       is_movie=True)
+                    elif season_number and episode_number:
+                        torrentio_future = pool.submit(torrentio.search_imdb, imdb_id,
+                                                       int(season_number), int(episode_number))
+                    if torrentio_future:
+                        pending += 1
+                    pdlg.update(int(done / pending * 100),
+                                "{} sources".format(len(all_results)))
+                elif source == "poster" and result:
+                    poster_url = result
+                    pdlg.update(int(done / pending * 100),
+                                "{} sources".format(len(all_results)))
+
+            # Wait for Torrentio if launched
+            if torrentio_future:
+                try:
+                    tr = torrentio_future.result()
+                    all_results.extend(tr)
+                except Exception:
+                    pass
+                done += 1
+                pdlg.update(100, "{} sources".format(len(all_results)))
+
+    finally:
+        pdlg.close()
 
     # Sort by file size descending (largest first)
-    results.sort(key=lambda r: _parse_size_bytes(r.get('size', '')), reverse=True)
+    all_results.sort(key=lambda r: _parse_size_bytes(r.get('size', '')), reverse=True)
 
-    for r in results:
+    for r in all_results:
         if season_number and 'episode' in r and 'season' not in r:
             r['season'] = season_number
         pl = episode_title if episode_number and episode_title else show_title
         add_scrape_result(r, poster_url, play_label=pl)
 
-    if not results:
+    if not all_results:
         label = "No sources found"
         if episode_number:
             label += f" for S{int(season_number):02d}E{int(episode_number):02d}"
