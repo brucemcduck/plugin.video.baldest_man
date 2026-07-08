@@ -73,10 +73,12 @@ def set_info(li, item, is_folder):
 
 def label_result(item):
     """Format scrape result label: Episode Name  or  Movie Title."""
+    if item.get('tmdb_episode_title'):
+        return item['tmdb_episode_title']
     if item.get('episode'):
         return item.get('title') or f"S{int(item.get('season', '01')):02d}E{int(item['episode']):02d}"
     elif item.get('is_movie'):
-        return item['show_title']
+        return item.get('tmdb_show_title') or item.get('show_title', '')
     else:
         return item.get('title', item.get('show_title', ''))
 
@@ -355,6 +357,9 @@ elif mode[0] == 'scrape':
     for r in results:
         if season_number and 'episode' in r and 'season' not in r:
             r['season'] = season_number
+        r['tmdb_show_title'] = show_title
+        if episode_number and episode_title:
+            r['tmdb_episode_title'] = episode_title
         add_scrape_result(r, poster_url)
 
     if not results:
