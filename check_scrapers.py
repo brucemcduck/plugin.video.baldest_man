@@ -9,7 +9,6 @@ sys.path.insert(0, ".")
 import scrapers
 
 QUERIES = ["the", "2024"]  # common words that should match something in any batch
-TIMEOUT = 10
 
 
 def test_one(mod):

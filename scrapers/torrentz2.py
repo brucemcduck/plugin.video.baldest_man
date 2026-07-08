@@ -33,7 +33,7 @@ def search(query):
         if not title or not href.startswith("/torrent/"):
             continue
 
-        size, seeders, leechers = "", 0, 0
+        size, seeders = "", 0
         dd = dl.find("dd")
         if dd:
             s_el = dd.select_one("span.s")
@@ -45,14 +45,8 @@ def search(query):
                     seeders = int(u_el.get_text(strip=True))
                 except ValueError:
                     pass
-            d_el = dd.select_one("span.d")
-            if d_el:
-                try:
-                    leechers = int(d_el.get_text(strip=True))
-                except ValueError:
-                    pass
 
-        result = _parse(title, size, seeders, leechers)
+        result = _parse(title, size, seeders)
         if not result:
             continue
         result["site"] = SITE_NAME
@@ -72,7 +66,7 @@ def search(query):
     return [r for r in results if "url" in r and r.get("url")]
 
 
-def _parse(title, size, seeders, leechers):
+def _parse(title, size, seeders):
     quality = None
     qm = _QUALITY_RE.search(title)
     if qm:
@@ -107,8 +101,6 @@ def _parse(title, size, seeders, leechers):
         result["size"] = size
     if seeders:
         result["seeders"] = seeders
-    if leechers:
-        result["leechers"] = leechers
 
     return result
 
