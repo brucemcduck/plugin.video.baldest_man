@@ -14,7 +14,10 @@ import xbmcplugin
 
 from resources.lib import scraper_runner, tmdb
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
-from resources.lib.trakt import get_device_code, poll_for_token, scrobble_start, TraktError
+from resources.lib.trakt import (get_device_code, poll_for_token, scrobble_start,
+                                  get_watchlist, get_collection,
+                                  get_watched_shows, get_show_progress,
+                                  TraktError)
 from scrapers import torrentio
 
 ADDON = xbmcaddon.Addon()
@@ -189,6 +192,18 @@ if mode is None:
                                             xbmcgui.ListItem(cw_label), isFolder=True)
         except (json.JSONDecodeError, KeyError):
             pass
+
+    # Trakt menus
+    trakt_token = ADDON.getSetting('trakt_access_token')
+    if trakt_token:
+        for label, list_type in [
+            ('Trakt Watchlist', 'watchlist'),
+            ('Trakt Collection', 'collection'),
+            ('Progress / Up Next', 'progress'),
+        ]:
+            url = build_url({'mode': 'trakt_browse', 'list_type': list_type})
+            xbmcplugin.addDirectoryItem(addon_handle, url,
+                                        xbmcgui.ListItem(label), isFolder=True)
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
@@ -525,6 +540,78 @@ elif mode[0] == 'auth_trakt':
                 notify("Trakt: " + str(e))
 
     xbmcplugin.endOfDirectory(addon_handle)
+
+# --- Trakt Browse: watchlist, collection, progress ---
+elif mode[0] == 'trakt_browse':
+    access_token = ADDON.getSetting('trakt_access_token')
+    list_type = args.get('list_type', ['watchlist'])[0]
+
+    if not access_token:
+        xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+    else:
+        items = []
+        try:
+            if list_type == 'watchlist':
+                shows = get_watchlist(access_token, 'shows')
+                movies = get_watchlist(access_token, 'movies')
+                items = [('show', s['show'], s['show']['ids']) for s in shows]
+                items += [('movie', m['movie'], m['movie']['ids']) for m in movies]
+            elif list_type == 'collection':
+                shows = get_collection(access_token, 'shows')
+                movies = get_collection(access_token, 'movies')
+                items = [('show', s['show'], s['show']['ids']) for s in shows]
+                items += [('movie', m['movie'], m['movie']['ids']) for m in movies]
+            elif list_type == 'progress':
+                watched = get_watched_shows(access_token)
+                for w in watched:
+                    sid = w['show']['ids'].get('trakt')
+                    if sid:
+                        prog = get_show_progress(access_token, sid)
+                        ne = prog.get('next_episode')
+                        if ne:
+                            items.append(('progress', w['show'],
+                                          {'tmdb': w['show']['ids'].get('tmdb'),
+                                           'season': ne['season'],
+                                           'number': ne['number'],
+                                           'title': ne.get('title', '')}))
+        except Exception:
+            pass
+
+        if not items:
+            li = xbmcgui.ListItem("Nothing found")
+            xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
+        else:
+            for item_type, data, ids in items:
+                tmdb_id = ids.get('tmdb')
+                if not tmdb_id:
+                    continue
+                title = data.get('title', '')
+                year = str(data.get('year', ''))
+                label = f"{title} ({year})" if year else title
+                li = xbmcgui.ListItem(label)
+
+                if item_type == 'progress':
+                    url = build_url({'mode': 'scrape',
+                                     'show_title': title,
+                                     'show_id': str(tmdb_id),
+                                     'season_number': str(ids.get('season', '')),
+                                     'episode_number': str(ids.get('number', '')),
+                                     'episode_title': ids.get('title', ''),
+                                     'content_type': 'shows'})
+                    xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+                elif item_type == 'show':
+                    url = build_url({'mode': 'seasons',
+                                     'show_id': str(tmdb_id),
+                                     'show_title': title})
+                    xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+                else:
+                    url = build_url({'mode': 'scrape',
+                                     'show_title': title,
+                                     'show_id': str(tmdb_id),
+                                     'content_type': 'movies'})
+                    xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+
+        xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 # --- Play: resolve if torrent, hand to Kodi ---
 elif mode[0] == 'play':
