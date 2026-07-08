@@ -53,15 +53,22 @@ def search(query):
         result["_detail_url"] = BASE + href
         results.append(result)
 
-    # Fetch magnet links from detail pages (limit to 10 to avoid hammering)
-    for r in results[:10]:
+    # Fetch magnet links from detail pages in parallel (limit 10)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_magnet(r):
         detail = _fetch(r["_detail_url"])
-        if not detail:
-            continue
-        magnet = _extract_magnet(detail)
-        if magnet:
-            r["url"] = magnet
+        if detail:
+            magnet = _extract_magnet(detail)
+            if magnet:
+                r["url"] = magnet
         del r["_detail_url"]
+        return r
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_fetch_magnet, r): r for r in results[:10]}
+        for future in as_completed(futures):
+            pass
 
     return [r for r in results if "url" in r and r.get("url")]
 
