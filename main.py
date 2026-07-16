@@ -724,6 +724,66 @@ elif mode[0] == 'scrape':
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
+# --- Quick Download: auto-pick best source and download ---
+elif mode[0] == 'quick_download':
+    show_title = args.get('show_title', [''])[0]
+    show_id = args.get('show_id', [None])[0]
+    year = args.get('year', [''])[0]
+    season_number = args.get('season_number', [None])[0]
+    episode_number = args.get('episode_number', [None])[0]
+    episode_title = args.get('episode_title', [''])[0]
+    content_type = args.get('content_type', ['all'])[0]
+
+    pdlg = xbmcgui.DialogProgress()
+    pdlg.create("Quick Download", "Starting...")
+    try:
+        if season_number and not episode_number:
+            # Season batch — show multi-select episode picker
+            episodes = tmdb.get_episodes(int(show_id), int(season_number),
+                                         tmdb_api_key(), tmdb_lang())
+            if not episodes:
+                pdlg.close()
+                notify("No episodes found for this season")
+                xbmcplugin.endOfDirectory(addon_handle)
+            else:
+                ep_labels = [ep.get('name', 'Episode {}'.format(ep['episode_number']))
+                             for ep in episodes]
+                selected = xbmcgui.Dialog().multiselect("Select episodes (OK = all)", ep_labels)
+
+                if selected is None:
+                    # User cancelled
+                    pass
+                elif len(selected) == 0:
+                    # OK with nothing selected = download all
+                    selected = list(range(len(episodes)))
+                # else: download only selected indices
+
+                if selected is not None:
+                    total = len(selected)
+                    for idx, ep_idx in enumerate(selected):
+                        if pdlg.iscanceled():
+                            break
+                        ep = episodes[ep_idx]
+                        _quick_download_one(
+                            show_title, show_id, year,
+                            season_number, str(ep['episode_number']),
+                            ep.get('name', ''),
+                            content_type, pdlg,
+                            episode_index=idx + 1, episode_total=total)
+        else:
+            # Single item (movie or episode)
+            _quick_download_one(
+                show_title, show_id, year,
+                season_number, episode_number, episode_title,
+                content_type, pdlg)
+    finally:
+        try:
+            pdlg.close()
+        except Exception:
+            pass
+
+    xbmcplugin.endOfDirectory(addon_handle)
+
 # --- Auth: AllDebrid PIN flow ---
 elif mode[0] == 'ad_authorize':
     try:
