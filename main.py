@@ -339,6 +339,118 @@ def _scrape_with_early_termination(query, content_type, show_id=None,
     return all_results, poster_url, imdb_id, meta
 
 
+def _quick_download_one(show_title, show_id, year, season_number, episode_number,
+                        episode_title, content_type, pdlg,
+                        episode_index=None, episode_total=None):
+    """Scrape, auto-pick best source, download with fallback.
+    Returns True on success, False on failure.
+    pdlg is an already-created DialogProgress (caller manages create/close).
+    episode_index/episode_total are for season-batch progress display."""
+    key = api_key()
+    if not key:
+        notify("AllDebrid not authorized — use the PIN flow in settings")
+        return False
+
+    if season_number and episode_number:
+        query = f"{show_title} S{int(season_number):02d}E{int(episode_number):02d}"
+    else:
+        query = f"{show_title} {year}".strip() if year else show_title
+
+    is_movie = content_type == 'movies'
+    max_sources = int(ADDON.getSetting('quick_download_max_sources') or '10')
+
+    pdlg.update(0, "Scraping...")
+
+    results, poster_url, imdb_id, meta = _scrape_with_early_termination(
+        query, content_type, show_id=show_id, is_movie=is_movie,
+        season_number=season_number, episode_number=episode_number,
+        max_sources=max_sources)
+
+    if not results:
+        label = episode_title or show_title
+        notify("No sources found for {}".format(label))
+        return False
+
+    results.sort(key=_quality_sort_key)
+
+    label = episode_title or show_title
+    timeout = int(ADDON.getSetting('magnet_timeout') or 120)
+    fname = download_manager.safe_filename(show_title, season_number, episode_number)
+    dest = os.path.join(download_manager.get_download_dir(), fname)
+
+    for i, r in enumerate(results):
+        if pdlg.iscanceled():
+            return False
+
+        prefix = ""
+        if episode_index and episode_total:
+            prefix = "Episode {}/{}: ".format(episode_index, episode_total)
+
+        magnet = r.get('magnet', '')
+        if not magnet:
+            continue
+
+        pdlg.update(10, "{}Resolving source {}/{}...".format(prefix, i + 1, len(results)))
+
+        try:
+            direct_url = ad_resolve(magnet, key, timeout=timeout,
+                                    cancel_check=pdlg.iscanceled)
+            if pdlg.iscanceled():
+                return False
+
+            est = _parse_size_bytes(r.get('size', ''))
+            if est and not download_manager.has_space(dest, est):
+                notify("Not enough disk space for {}".format(label))
+                return False
+
+            pdlg.update(15, "{}Downloading {}...".format(prefix, fname))
+
+            def dl_cb(written, total, pct):
+                label_txt = "{} ({} / {} MB)".format(
+                    fname, written // 1048576, total // 1048576)
+                pdlg.update(15 + pct * 85 // 100, label_txt)
+
+            ok = download_manager.download_video(
+                direct_url, dest,
+                cancel_check=pdlg.iscanceled,
+                progress_callback=dl_cb,
+                source_id=magnet)
+
+            if not ok:
+                if pdlg.iscanceled():
+                    return False
+                continue
+
+        except (AllDebridError, DownloadError):
+            continue
+
+        poster_local = None
+        if poster_url:
+            poster_local = download_manager.cache_artwork(
+                poster_url, os.path.join(download_manager.art_dir(),
+                                         fname + '.poster.jpg'))
+
+        entry = {
+            'id': fname,
+            'title': label,
+            'show_title': show_title,
+            'season': season_number,
+            'episode': episode_number,
+            'file_path': dest,
+            'size_bytes': os.path.getsize(dest),
+            'date_added': int(time.time()),
+            'mediatype': 'episode' if episode_number else 'movie',
+            'plot': '',
+            'poster_path': poster_local,
+        }
+        download_manager.add_to_manifest(entry)
+        notify("Downloaded: {}".format(label))
+        return True
+
+    notify("All {} sources failed for {}".format(len(results), label))
+    return False
+
+
 mode = args.get('mode', None)
 
 # --- Root: menu ---
