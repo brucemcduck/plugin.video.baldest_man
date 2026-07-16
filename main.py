@@ -884,6 +884,22 @@ elif mode[0] == 'search_history':
 
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
+# --- Delete single history entry ---
+elif mode[0] == 'delete_history':
+    idx = int(args.get('index', ['-1'])[0])
+    history = _load_search_history()
+    if 0 <= idx < len(history):
+        history.pop(idx)
+        _save_search_history(history)
+        notify("Search history entry deleted")
+    xbmcplugin.endOfDirectory(addon_handle)
+
+# --- Clear all search history ---
+elif mode[0] == 'clear_history':
+    _save_search_history([])
+    notify("Search history cleared")
+    xbmcplugin.endOfDirectory(addon_handle)
+
 # --- Auth: AllDebrid PIN flow ---
 elif mode[0] == 'ad_authorize':
     try:
