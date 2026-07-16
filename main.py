@@ -733,6 +733,17 @@ elif mode[0] == 'scrape':
     episode_title = args.get('episode_title', [''])[0]
     content_type = args.get('content_type', ['all'])[0]
 
+    src = args.get('src', [''])[0]
+    if src == 'search' and content_type == 'movies':
+        _add_search_history({
+            'kind': 'movie',
+            'show_id': int(show_id) if show_id else 0,
+            'title': show_title,
+            'year': year,
+            'poster_url': args.get('poster_url', [''])[0],
+            'content_type': 'movies',
+        })
+
     cache_key = json.dumps({'show_title': show_title, 'show_id': show_id,
                             'season': season_number, 'episode': episode_number,
                             'content_type': content_type}, sort_keys=True)
