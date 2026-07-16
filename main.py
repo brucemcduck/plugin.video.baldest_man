@@ -592,20 +592,8 @@ elif mode[0] == 'search':
     movies = []
     query = ''
 
-    # Check for q param (re-run from history) — use cache if available, skip dialog
-    q_param = args.get('q', [None])[0]
     cached = _read_search_cache()
-    if q_param:
-        query = q_param
-        if cached and cached.get('content_type') == content_type and cached.get('query', '') == query:
-            shows = cached.get('shows', [])
-            movies = cached.get('movies', [])
-        else:
-            shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
-            movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
-            _save_search_cache(content_type, shows, movies, query)
-        _add_search_history(query, content_type)
-    elif cached and cached.get('content_type') == content_type:
+    if cached and cached.get('content_type') == content_type:
         shows = cached.get('shows', [])
         movies = cached.get('movies', [])
         query = cached.get('query', '')
@@ -619,14 +607,14 @@ elif mode[0] == 'search':
             shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
             movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
             _save_search_cache(content_type, shows, movies, query)
-            _add_search_history(query, content_type)
 
     if query:
 
         if content_type in ('shows', 'all'):
             for s in shows:
                 url = build_url({'mode': 'seasons', 'show_id': str(s['id']),
-                                 'show_title': s['title']})
+                                 'show_title': s['title'], 'year': s.get('year', ''),
+                                 'poster_url': s.get('poster_url', ''), 'src': 'search'})
                 label = f"{s['title']} ({s.get('year', '')})"
                 li = xbmcgui.ListItem(label)
                 set_info(li, s, is_folder=True)
@@ -637,7 +625,8 @@ elif mode[0] == 'search':
                 url = build_url({'mode': 'scrape', 'show_title': m['title'],
                                  'year': m.get('year', ''),
                                  'show_id': str(m['id']),
-                                 'content_type': 'movies'})
+                                 'poster_url': m.get('poster_url', ''),
+                                 'content_type': 'movies', 'src': 'search'})
                 label = f"{m['title']} ({m.get('year', '')})"
                 li = xbmcgui.ListItem(label)
                 set_info(li, m, is_folder=True)
