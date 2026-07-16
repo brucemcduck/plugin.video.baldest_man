@@ -46,6 +46,21 @@ def notify(msg):
     xbmcgui.Dialog().notification('bald_man', msg, xbmcgui.NOTIFICATION_INFO, 3000)
 
 
+def clean_error(msg):
+    """Map raw exception text to short, human-readable messages for notifications."""
+    s = str(msg)
+    lower = s.lower()
+    if 'max retries exceeded' in lower or 'ssl' in lower or 'handshake' in lower:
+        return 'Network error: can\'t reach service (check your connection)'
+    if 'connection refused' in lower or 'connection timed out' in lower or 'timeout' in lower:
+        return 'Network error: connection failed (check your connection)'
+    if 'invalid apikey' in lower or 'unauthorized' in lower:
+        return 'AllDebrid: invalid or expired key — re-authorize in settings'
+    if 'name or service not known' in lower or 'getaddrinfo' in lower:
+        return 'Network error: can\'t resolve host (check your connection)'
+    return s.replace('\n', ' ')[:80]
+
+
 _SEARCH_CACHE = os.path.join(tempfile.gettempdir(), "baldman_tmdb.json")
 _SCRAPE_CACHE = os.path.join(tempfile.gettempdir(), "baldman_scrape.json")
 
@@ -571,7 +586,7 @@ elif mode[0] == 'ad_authorize':
     try:
         pin_data = ad_pin_start()
     except AllDebridError as e:
-        notify("AllDebrid: " + str(e))
+        notify(clean_error(e))
         xbmcplugin.endOfDirectory(addon_handle)
     else:
         msg = ("1. Go to: [COLOR skyblue]https://alldebrid.com/pin[/COLOR]\n"
@@ -601,10 +616,10 @@ elif mode[0] == 'ad_authorize':
                 except AllDebridError as e:
                     pdlg.close()
                     ADDON.setSetting('alldebridtoken', "")
-                    notify("Authorization failed: " + str(e))
+                    notify("Authorization failed: " + clean_error(e))
         except AllDebridError as e:
             pdlg.close()
-            notify("AllDebrid: " + str(e))
+            notify(clean_error(e))
 
         xbmcplugin.endOfDirectory(addon_handle)
 
@@ -624,7 +639,7 @@ elif mode[0] == 'ad_account_info':
         try:
             user = ad_get_user(key)
         except AllDebridError as e:
-            notify("AllDebrid: " + str(e))
+            notify(clean_error(e))
             xbmcplugin.endOfDirectory(addon_handle)
         else:
             from datetime import datetime
@@ -656,7 +671,7 @@ elif mode[0] == 'auth_trakt':
         try:
             data = get_device_code(client_id)
         except TraktError as e:
-            notify("Trakt: " + str(e))
+            notify("Trakt: " + clean_error(e))
         else:
             msg = ("1. Go to: [COLOR skyblue]{}[/COLOR]\n"
                    "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
@@ -676,7 +691,7 @@ elif mode[0] == 'auth_trakt':
                 notify("Trakt authorized!")
             except TraktError as e:
                 pdlg.close()
-                notify("Trakt: " + str(e))
+                notify("Trakt: " + clean_error(e))
 
     xbmcplugin.endOfDirectory(addon_handle)
 
@@ -908,7 +923,7 @@ elif mode[0] == 'download':
                         notify("Downloaded: {}".format(label))
 
                 except (AllDebridError, DownloadError) as e:
-                    notify('Download failed: ' + str(e))
+                    notify('Download failed: ' + clean_error(e))
                 finally:
                     try:
                         pdlg.close()
@@ -988,7 +1003,7 @@ elif mode[0] == 'play':
                         pdlg.close()
                     except Exception:
                         pass
-                notify('AllDebrid: ' + str(e))
+                notify(clean_error(e))
                 xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
     else:
         li = xbmcgui.ListItem(label, path=url)
