@@ -12,7 +12,7 @@ import xbmcgui
 # pyrefly: ignore [missing-import]
 import xbmcplugin
 
-from resources.lib import scraper_runner, tmdb
+from resources.lib import scraper_runner, tmdb, download_manager
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
 from resources.lib.trakt import (get_device_code, poll_for_token, scrobble_start,
                                   get_watchlist, get_collection,
@@ -101,6 +101,32 @@ def _parse_size_bytes(size_str):
     return int(val)
 
 
+def _pick_offline_source(results):
+    """Filter scrape results to offline_quality under size cap, smallest first.
+    Returns the best result dict or None."""
+    want_q = (ADDON.getSetting('offline_quality') or '720p').lower()
+    max_gb = int(ADDON.getSetting('max_download_size_gb') or '2')
+    max_bytes = max_gb * 1073741824
+
+    def _ok(r):
+        q = (r.get('quality') or '').lower()
+        sz = _parse_size_bytes(r.get('size', ''))
+        if q and q != want_q:
+            return False
+        if sz and sz > max_bytes:
+            return False
+        return True
+
+    candidates = [r for r in results if _ok(r)]
+    if not candidates:
+        candidates = [r for r in results
+                      if _parse_size_bytes(r.get('size', '')) <= max_bytes]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda r: _parse_size_bytes(r.get('size', '')) or 0)
+    return candidates[0]
+
+
 def add_scrape_result(item, poster_url=None, play_label=None, meta=None):
     """Add a playable scrape result with structured metadata and artwork.
     play_label overrides the list label for the player title (e.g. TMDB name).
@@ -142,6 +168,17 @@ def add_scrape_result(item, poster_url=None, play_label=None, meta=None):
     if meta:
         params.update(meta)
     play_url = build_url(params)
+
+    # Context menu: Download for Offline
+    dl_params = dict(params)
+    dl_params['mode'] = 'download'
+    dl_params['size'] = item.get('size', '')
+    if poster_url:
+        dl_params['poster_url'] = poster_url
+    dl_params['plot'] = info.get('plot', '')
+    dl_url = build_url(dl_params)
+    li.addContextMenuItems([('Download for Offline', 'RunPlugin({})'.format(dl_url))])
+
     xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
 
 
@@ -612,6 +649,105 @@ elif mode[0] == 'trakt_browse':
                     xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- Download: resolve + save to disk for offline playback ---
+elif mode[0] == 'download':
+    url = args.get('url', [''])[0]
+    ep_type = args.get('type', ['direct'])[0]
+    label = args.get('label', [''])[0]
+
+    if ep_type != 'torrent':
+        notify('Only torrent sources can be downloaded for offline')
+        xbmcplugin.endOfDirectory(addon_handle)
+    else:
+        key = api_key()
+        if not key:
+            notify('AllDebrid API key not set')
+            xbmcplugin.endOfDirectory(addon_handle)
+        else:
+            pdlg = xbmcgui.DialogProgress()
+            pdlg.create("Downloading for Offline", "Resolving magnet...")
+
+            try:
+                timeout = int(ADDON.getSetting('magnet_timeout') or 120)
+
+                def prog_cb(state, pct, eta):
+                    if state == "uploading":
+                        pdlg.update(0, "Uploading magnet...")
+                    elif state == "ready":
+                        pdlg.update(5, "Resolved — starting download...")
+                    else:
+                        pdlg.update(pct // 5, "Resolving... ~{}s".format(eta))
+
+                direct_url = ad_resolve(url, key, timeout=timeout,
+                                        cancel_check=pdlg.iscanceled,
+                                        progress_callback=prog_cb)
+                if pdlg.iscanceled():
+                    pdlg.close()
+                    xbmcplugin.endOfDirectory(addon_handle)
+                    raise AllDebridError("Cancelled")
+
+                show_title = args.get('show_title', [''])[0]
+                season = args.get('season', [None])[0]
+                episode = args.get('episode', [None])[0]
+                fname = download_manager.safe_filename(show_title or label, season, episode)
+                dest = os.path.join(download_manager.get_download_dir(), fname)
+
+                est = _parse_size_bytes(args.get('size', [''])[0])
+                if est and not download_manager.has_space(dest, est):
+                    pdlg.close()
+                    notify("Not enough disk space for this download")
+                    xbmcplugin.endOfDirectory(addon_handle)
+                    raise AllDebridError("Insufficient space")
+
+                pdlg.update(6, "Downloading {}...".format(fname))
+
+                def dl_cb(written, total, pct):
+                    label_txt = "{} ({} / {} MB)".format(
+                        fname, written // 1048576, total // 1048576)
+                    pdlg.update(6 + pct * 94 // 100, label_txt)
+
+                ok = download_manager.download_video(
+                    direct_url, dest,
+                    cancel_check=pdlg.iscanceled,
+                    progress_callback=dl_cb)
+                pdlg.close()
+
+                if not ok:
+                    notify("Download cancelled")
+                else:
+                    poster_url = args.get('poster_url', [None])[0]
+                    poster_local = None
+                    if poster_url:
+                        poster_local = download_manager.cache_artwork(
+                            poster_url, os.path.join(download_manager.art_dir(),
+                                                     fname + '.poster.jpg'))
+
+                    import time as _time
+                    entry = {
+                        'id': fname,
+                        'title': label,
+                        'show_title': show_title,
+                        'season': season,
+                        'episode': episode,
+                        'file_path': dest,
+                        'size_bytes': os.path.getsize(dest),
+                        'date_added': int(_time.time()),
+                        'mediatype': 'episode' if episode else 'movie',
+                        'plot': args.get('plot', [''])[0],
+                        'poster_path': poster_local,
+                    }
+                    download_manager.add_to_manifest(entry)
+                    notify("Downloaded: {}".format(label))
+
+            except AllDebridError as e:
+                try:
+                    pdlg.close()
+                except Exception:
+                    pass
+                notify('Download failed: ' + str(e))
+
+            xbmcplugin.endOfDirectory(addon_handle)
 
 # --- Play: resolve if torrent, hand to Kodi ---
 elif mode[0] == 'play':
