@@ -603,6 +603,7 @@ elif mode[0] == 'search':
             shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
             movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
             _save_search_cache(content_type, shows, movies, query)
+            _add_search_history(query, content_type)
 
     if query:
 
