@@ -62,4 +62,22 @@
     <setting label="Authorize Device" type="action"
              action="RunPlugin(plugin://plugin.video.baldest_man/?mode=auth_trakt)"/>
   </category>
+  <category label="Offline Downloads">
+    <setting id="offline_quality" type="text" label="Preferred quality for offline" default="720p">
+      <constraints>
+        <allowempty>false</allowempty>
+      </constraints>
+    </setting>
+    <setting id="max_download_size_gb" type="integer" label="Max file size (GB)" default="2">
+      <constraints>
+        <minimum>1</minimum>
+        <maximum>20</maximum>
+      </constraints>
+    </setting>
+    <setting id="download_path" type="text" label="Download folder (blank = default)" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+      </constraints>
+    </setting>
+  </category>
 </settings>
