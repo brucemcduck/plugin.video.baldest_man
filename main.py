@@ -584,6 +584,11 @@ elif mode[0] == 'search':
                 label = f"{m['title']} ({m.get('year', '')})"
                 li = xbmcgui.ListItem(label)
                 set_info(li, m, is_folder=True)
+                qdl_url = build_url({'mode': 'quick_download', 'show_title': m['title'],
+                                     'year': m.get('year', ''),
+                                     'show_id': str(m['id']),
+                                     'content_type': 'movies'})
+                li.addContextMenuItems([('Quick Download', 'RunPlugin({})'.format(qdl_url))])
                 xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
         total = (len(shows) if content_type in ('shows', 'all') else 0) + \
@@ -611,6 +616,11 @@ elif mode[0] == 'seasons':
         poster = s.get('poster_url')
         if poster:
             li.setArt({'poster': poster})
+        qdl_url = build_url({'mode': 'quick_download', 'show_title': show_title,
+                             'show_id': str(show_id),
+                             'season_number': str(s['season_number']),
+                             'content_type': 'shows'})
+        li.addContextMenuItems([('Quick Download Season', 'RunPlugin({})'.format(qdl_url))])
         xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
     if not seasons:
@@ -641,6 +651,13 @@ elif mode[0] == 'episodes':
         if ep.get('overview'):
             info['plot'] = ep['overview']
         li.setInfo('video', info)
+        qdl_url = build_url({'mode': 'quick_download', 'show_title': show_title,
+                             'show_id': str(show_id),
+                             'season_number': str(season_number),
+                             'episode_number': str(ep['episode_number']),
+                             'episode_title': ep.get('name', ''),
+                             'content_type': 'shows'})
+        li.addContextMenuItems([('Quick Download', 'RunPlugin({})'.format(qdl_url))])
         xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
     if not episodes:
