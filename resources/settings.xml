@@ -7,7 +7,18 @@
         <maximum>600</maximum>
       </constraints>
     </setting>
-    <setting id="alldebrid_api_key" type="text" label="API Key" default="">
+    <setting label="Authorize AllDebrid (PIN)" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=ad_authorize)"/>
+    <setting label="Revoke Authorization" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=ad_revoke)"/>
+    <setting label="Account Info" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=ad_account_info)"/>
+    <setting id="alldebridusername" type="text" label="Logged in as" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+      </constraints>
+    </setting>
+    <setting id="alldebridtoken" type="text" default="">
       <constraints>
         <allowempty>true</allowempty>
         <hidden>true</hidden>
