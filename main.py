@@ -20,8 +20,7 @@ from resources.lib.alldebrid import (resolve as ad_resolve, AllDebridError,
                                       pin_start as ad_pin_start,
                                       pin_poll as ad_pin_poll,
                                       get_user as ad_get_user,
-                                      revoke as ad_revoke_auth,
-                                      validate_key as ad_validate_key)
+                                      revoke as ad_revoke_auth)
 from resources.lib.download_manager import DownloadError
 from resources.lib.trakt import (get_device_code, poll_for_token, scrobble_start,
                                   get_watchlist, get_collection,
