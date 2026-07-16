@@ -4,7 +4,10 @@ import os
 import re
 import sys
 import tempfile
+import time
 import urllib.parse
+# pyrefly: ignore [missing-import]
+import xbmc
 # pyrefly: ignore [missing-import]
 import xbmcaddon
 # pyrefly: ignore [missing-import]
@@ -14,6 +17,7 @@ import xbmcplugin
 
 from resources.lib import scraper_runner, tmdb, download_manager
 from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
+from resources.lib.download_manager import DownloadError
 from resources.lib.trakt import (get_device_code, poll_for_token, scrobble_start,
                                   get_watchlist, get_collection,
                                   get_watched_shows, get_show_progress,
@@ -709,9 +713,8 @@ elif mode[0] == 'delete_download':
     download_manager.remove_from_manifest(item_id)
     notify("Download deleted")
     try:
-        import xbmc
         xbmc.executebuiltin('Container.Refresh')
-    except ImportError:
+    except Exception:
         pass
     xbmcplugin.endOfDirectory(addon_handle)
 
@@ -730,89 +733,98 @@ elif mode[0] == 'download':
             notify('AllDebrid API key not set')
             xbmcplugin.endOfDirectory(addon_handle)
         else:
-            pdlg = xbmcgui.DialogProgress()
-            pdlg.create("Downloading for Offline", "Resolving magnet...")
+            # Enforce max_download_size_gb cap (the setting is otherwise decorative)
+            max_gb = int(ADDON.getSetting('max_download_size_gb') or '2')
+            max_bytes = max_gb * 1073741824
+            est = _parse_size_bytes(args.get('size', [''])[0])
+            if est and est > max_bytes:
+                notify("Source ({} GB) exceeds your max download size ({} GB)".format(
+                    est // 1073741824, max_gb))
+                xbmcplugin.endOfDirectory(addon_handle)
+            else:
+                pdlg = xbmcgui.DialogProgress()
+                pdlg.create("Downloading for Offline", "Resolving magnet...")
 
-            try:
-                timeout = int(ADDON.getSetting('magnet_timeout') or 120)
-
-                def prog_cb(state, pct, eta):
-                    if state == "uploading":
-                        pdlg.update(0, "Uploading magnet...")
-                    elif state == "ready":
-                        pdlg.update(5, "Resolved — starting download...")
-                    else:
-                        pdlg.update(pct // 5, "Resolving... ~{}s".format(eta))
-
-                direct_url = ad_resolve(url, key, timeout=timeout,
-                                        cancel_check=pdlg.iscanceled,
-                                        progress_callback=prog_cb)
-                if pdlg.iscanceled():
-                    pdlg.close()
-                    xbmcplugin.endOfDirectory(addon_handle)
-                    raise AllDebridError("Cancelled")
-
-                show_title = args.get('show_title', [''])[0]
-                season = args.get('season', [None])[0]
-                episode = args.get('episode', [None])[0]
-                fname = download_manager.safe_filename(show_title or label, season, episode)
-                dest = os.path.join(download_manager.get_download_dir(), fname)
-
-                est = _parse_size_bytes(args.get('size', [''])[0])
-                if est and not download_manager.has_space(dest, est):
-                    pdlg.close()
-                    notify("Not enough disk space for this download")
-                    xbmcplugin.endOfDirectory(addon_handle)
-                    raise AllDebridError("Insufficient space")
-
-                pdlg.update(6, "Downloading {}...".format(fname))
-
-                def dl_cb(written, total, pct):
-                    label_txt = "{} ({} / {} MB)".format(
-                        fname, written // 1048576, total // 1048576)
-                    pdlg.update(6 + pct * 94 // 100, label_txt)
-
-                ok = download_manager.download_video(
-                    direct_url, dest,
-                    cancel_check=pdlg.iscanceled,
-                    progress_callback=dl_cb)
-                pdlg.close()
-
-                if not ok:
-                    notify("Download cancelled")
-                else:
-                    poster_url = args.get('poster_url', [None])[0]
-                    poster_local = None
-                    if poster_url:
-                        poster_local = download_manager.cache_artwork(
-                            poster_url, os.path.join(download_manager.art_dir(),
-                                                     fname + '.poster.jpg'))
-
-                    import time as _time
-                    entry = {
-                        'id': fname,
-                        'title': label,
-                        'show_title': show_title,
-                        'season': season,
-                        'episode': episode,
-                        'file_path': dest,
-                        'size_bytes': os.path.getsize(dest),
-                        'date_added': int(_time.time()),
-                        'mediatype': 'episode' if episode else 'movie',
-                        'plot': args.get('plot', [''])[0],
-                        'poster_path': poster_local,
-                    }
-                    download_manager.add_to_manifest(entry)
-                    notify("Downloaded: {}".format(label))
-
-            except AllDebridError as e:
                 try:
-                    pdlg.close()
-                except Exception:
-                    pass
-                notify('Download failed: ' + str(e))
+                    timeout = int(ADDON.getSetting('magnet_timeout') or 120)
 
-            xbmcplugin.endOfDirectory(addon_handle)
+                    def prog_cb(state, pct, eta):
+                        if state == "uploading":
+                            pdlg.update(0, "Uploading magnet...")
+                        elif state == "ready":
+                            pdlg.update(5, "Resolved — starting download...")
+                        else:
+                            # Map resolve progress into 0–5% so the bar never retreats
+                            pdlg.update(min(5, pct * 5 // 100),
+                                        "Resolving... ~{}s".format(eta))
+
+                    direct_url = ad_resolve(url, key, timeout=timeout,
+                                            cancel_check=pdlg.iscanceled,
+                                            progress_callback=prog_cb)
+                    if pdlg.iscanceled():
+                        notify("Download cancelled")
+                        xbmcplugin.endOfDirectory(addon_handle)
+                        raise AllDebridError("Cancelled")
+
+                    show_title = args.get('show_title', [''])[0]
+                    season = args.get('season', [None])[0]
+                    episode = args.get('episode', [None])[0]
+                    fname = download_manager.safe_filename(show_title or label, season, episode)
+                    dest = os.path.join(download_manager.get_download_dir(), fname)
+
+                    if est and not download_manager.has_space(dest, est):
+                        notify("Not enough disk space for this download")
+                        xbmcplugin.endOfDirectory(addon_handle)
+                        raise AllDebridError("Insufficient space")
+
+                    pdlg.update(6, "Downloading {}...".format(fname))
+
+                    def dl_cb(written, total, pct):
+                        label_txt = "{} ({} / {} MB)".format(
+                            fname, written // 1048576, total // 1048576)
+                        pdlg.update(6 + pct * 94 // 100, label_txt)
+
+                    ok = download_manager.download_video(
+                        direct_url, dest,
+                        cancel_check=pdlg.iscanceled,
+                        progress_callback=dl_cb,
+                        source_id=url)
+
+                    if not ok:
+                        notify("Download cancelled")
+                    else:
+                        poster_url = args.get('poster_url', [None])[0]
+                        poster_local = None
+                        if poster_url:
+                            poster_local = download_manager.cache_artwork(
+                                poster_url, os.path.join(download_manager.art_dir(),
+                                                         fname + '.poster.jpg'))
+
+                        entry = {
+                            'id': fname,
+                            'title': label,
+                            'show_title': show_title,
+                            'season': season,
+                            'episode': episode,
+                            'file_path': dest,
+                            'size_bytes': os.path.getsize(dest),
+                            'date_added': int(time.time()),
+                            'mediatype': 'episode' if episode else 'movie',
+                            'plot': args.get('plot', [''])[0],
+                            'poster_path': poster_local,
+                        }
+                        download_manager.add_to_manifest(entry)
+                        notify("Downloaded: {}".format(label))
+
+                except (AllDebridError, DownloadError) as e:
+                    notify('Download failed: ' + str(e))
+                finally:
+                    try:
+                        pdlg.close()
+                    except Exception:
+                        pass
+
+                xbmcplugin.endOfDirectory(addon_handle)
 
 # --- Play: resolve if torrent, hand to Kodi ---
 elif mode[0] == 'play':

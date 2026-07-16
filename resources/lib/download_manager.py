@@ -88,7 +88,10 @@ def save_manifest(items):
 
 
 def add_to_manifest(entry):
+    """Append entry, replacing any existing entry with the same id (dedup)."""
     items = load_manifest()
+    item_id = entry.get('id')
+    items = [it for it in items if it.get('id') != item_id]
     items.append(entry)
     save_manifest(items)
 
@@ -98,7 +101,7 @@ def remove_from_manifest(item_id):
     kept = []
     for it in items:
         if it.get('id') == item_id:
-            for key in ('file_path', 'poster_path', 'thumb_path'):
+            for key in ('file_path', 'poster_path'):
                 p = it.get(key)
                 if p and os.path.exists(p):
                     try:
@@ -121,6 +124,9 @@ def safe_filename(title, season=None, episode=None):
 
 
 def has_space(path, required_bytes):
+    """Check disk has room for required_bytes (5% headroom).
+    Returns True if the check can't run (don't block downloads on unknown fs).
+    """
     try:
         usage = shutil.disk_usage(os.path.dirname(path) or '.')
         return usage.free >= required_bytes * 1.05
@@ -128,13 +134,21 @@ def has_space(path, required_bytes):
         return True
 
 
-def download_video(direct_url, dest_path, cancel_check=None, progress_callback=None):
+def download_video(direct_url, dest_path, cancel_check=None, progress_callback=None,
+                   source_id=None):
     """Stream direct_url to dest_path in 1MB chunks.
     Supports resume via HTTP Range if a .part file exists.
+    source_id: optional string (e.g. magnet hash) folded into the .part filename
+    so resume only appends to bytes from the same source — prevents corruption
+    when the same title is re-downloaded from a different source.
     Returns True on completion, False if cancelled.
     Raises DownloadError on network failure.
     """
-    part_path = dest_path + '.part'
+    import hashlib
+    suffix = ''
+    if source_id:
+        suffix = '.' + hashlib.md5(source_id.encode('utf-8')).hexdigest()[:8]
+    part_path = dest_path + suffix + '.part'
     resume_at = 0
     headers = {}
     if os.path.exists(part_path):
@@ -145,7 +159,9 @@ def download_video(direct_url, dest_path, cancel_check=None, progress_callback=N
     try:
         resp = requests.get(direct_url, headers=headers, stream=True, timeout=30)
         if resume_at and resp.status_code != 206:
+            # Server ignored Range — discard stale .part bytes from this source
             resume_at = 0
+            resp.close()
             resp = requests.get(direct_url, stream=True, timeout=30)
         resp.raise_for_status()
     except requests.RequestException as e:
@@ -160,6 +176,7 @@ def download_video(direct_url, dest_path, cancel_check=None, progress_callback=N
             for chunk in resp.iter_content(CHUNK_SIZE):
                 if cancel_check and cancel_check():
                     _log("download cancelled by user")
+                    resp.close()
                     return False
                 if chunk:
                     f.write(chunk)
@@ -172,6 +189,13 @@ def download_video(direct_url, dest_path, cancel_check=None, progress_callback=N
         return True
     except OSError as e:
         raise DownloadError("File write failed: {}".format(e))
+    except requests.RequestException as e:
+        raise DownloadError("Download interrupted: {}".format(e))
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
 
 
 def cache_artwork(url, dest_path):
