@@ -131,6 +131,96 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progr
         raise AllDebridError("API request failed: {}".format(str(e)))
 
 
+def pin_start():
+    """Start AllDebrid PIN flow. Returns dict with 'pin', 'check', 'expires_in'.
+    Raises AllDebridError on failure."""
+    try:
+        resp = requests.get(
+            API + ".1/pin/get",
+            params={"agent": "plugin.video.baldest_man"},
+            timeout=30,
+        )
+        data = _check_response(resp)
+        pin_data = data.get("data", {})
+        if not pin_data.get("pin") or not pin_data.get("check"):
+            raise AllDebridError("No PIN in response")
+        return {
+            "pin": pin_data["pin"],
+            "check": pin_data["check"],
+            "expires_in": pin_data.get("expires_in", 600),
+        }
+    except RequestException as e:
+        raise AllDebridError("PIN request failed: {}".format(e))
+
+
+def pin_poll(check, pin, cancel_check=None, poll_interval=5, expires_in=600):
+    """Poll AllDebrid until the PIN is activated. Returns the apikey string.
+    Returns None if cancelled via cancel_check. Raises AllDebridError on expiry.
+    """
+    deadline = time.time() + expires_in
+    while time.time() < deadline:
+        if cancel_check and cancel_check():
+            return None
+        time.sleep(poll_interval)
+        try:
+            resp = requests.post(
+                API + "/pin/check",
+                data={"agent": "plugin.video.baldest_man",
+                      "check": check, "pin": pin},
+                timeout=30,
+            )
+            data = _check_response(resp)
+            pin_data = data.get("data", {})
+            if pin_data.get("activated"):
+                apikey = pin_data.get("apikey", "")
+                if apikey:
+                    return str(apikey)
+                raise AllDebridError("PIN activated but no apikey returned")
+        except AllDebridError:
+            raise
+        except RequestException as e:
+            raise AllDebridError("PIN check failed: {}".format(e))
+    raise AllDebridError("PIN expired")
+
+
+def get_user(api_key):
+    """Fetch account info via /user endpoint. Returns the 'user' dict.
+    Raises AllDebridError on failure (invalid key, network error)."""
+    try:
+        resp = requests.get(
+            API + "/user",
+            params={"agent": "plugin.video.baldest_man", "apikey": api_key},
+            timeout=30,
+        )
+        data = _check_response(resp)
+        user = data.get("data", {}).get("user", {})
+        if not user:
+            raise AllDebridError("No user info in response")
+        return user
+    except RequestException as e:
+        raise AllDebridError("User request failed: {}".format(e))
+
+
+def revoke():
+    """Clear stored AllDebrid credentials. No server-side revoke (none exists)."""
+    try:
+        import xbmcaddon
+        addon = xbmcaddon.Addon()
+        addon.setSetting("alldebridtoken", "")
+        addon.setSetting("alldebridusername", "")
+    except ImportError:
+        pass
+
+
+def validate_key(api_key):
+    """Check if an API key is valid by calling /user. Returns True/False."""
+    try:
+        get_user(api_key)
+        return True
+    except AllDebridError:
+        return False
+
+
 def _find_file_link(files):
     """Find first downloadable file link in AllDebrid's v4.1 nested file tree.
     Tree nodes: {"n": name, "s": size, "l": link} for files,
