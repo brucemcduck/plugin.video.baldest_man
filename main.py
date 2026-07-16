@@ -241,15 +241,20 @@ def _quality_sort_key(r):
 
 def _scrape_with_early_termination(query, content_type, show_id=None,
                                     is_movie=False, season_number=None,
-                                    episode_number=None, max_sources=None):
+                                    episode_number=None, max_sources=None,
+                                    pdlg=None):
     """Scrape sources with optional early termination.
     Returns (results, poster_url, imdb_id, meta).
     If max_sources is set, stops collecting once that many viable results
-    (passing _seeder_ok) are found. If None, waits for all scrapers."""
+    (passing _seeder_ok) are found. If None, waits for all scrapers.
+    If pdlg is provided, uses that DialogProgress (caller manages lifecycle).
+    Otherwise creates and closes its own."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    pdlg = xbmcgui.DialogProgress()
-    pdlg.create("Searching for sources...", "Starting...")
+    owns_dialog = pdlg is None
+    if owns_dialog:
+        pdlg = xbmcgui.DialogProgress()
+        pdlg.create("Searching for sources...", "Starting...")
 
     all_results = []
     poster_url = None
@@ -322,7 +327,8 @@ def _scrape_with_early_termination(query, content_type, show_id=None,
                 pdlg.update(100, "{} sources".format(len(all_results)))
 
     finally:
-        pdlg.close()
+        if owns_dialog:
+            pdlg.close()
 
     all_results = [r for r in all_results if _seeder_ok(r)]
 
@@ -364,7 +370,7 @@ def _quick_download_one(show_title, show_id, year, season_number, episode_number
     results, poster_url, imdb_id, meta = _scrape_with_early_termination(
         query, content_type, show_id=show_id, is_movie=is_movie,
         season_number=season_number, episode_number=episode_number,
-        max_sources=max_sources)
+        max_sources=max_sources, pdlg=pdlg)
 
     if not results:
         label = episode_title or show_title
@@ -386,7 +392,7 @@ def _quick_download_one(show_title, show_id, year, season_number, episode_number
         if episode_index and episode_total:
             prefix = "Episode {}/{}: ".format(episode_index, episode_total)
 
-        magnet = r.get('magnet', '')
+        magnet = r.get('url', '')
         if not magnet:
             continue
 
