@@ -90,5 +90,11 @@
         <allowempty>true</allowempty>
       </constraints>
     </setting>
+    <setting id="quick_download_max_sources" type="integer" label="Quick Download: max sources to collect" default="10">
+      <constraints>
+        <minimum>2</minimum>
+        <maximum>50</maximum>
+      </constraints>
+    </setting>
   </category>
 </settings>
