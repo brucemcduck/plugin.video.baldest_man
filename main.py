@@ -87,12 +87,14 @@ def _save_search_history(history):
 
 
 def _add_search_history(record):
-    """Add or update a history entry. Dedupes by show_id, moves to front,
+    """Add or update a history entry. Dedupes by (show_id, kind), moves to front,
     trims to _MAX_HISTORY. record is a dict with show_id, kind, title,
     year, poster_url, content_type; timestamp is added here."""
     history = _load_search_history()
+    history = [h for h in history if h.get('show_id')]
     show_id = record.get('show_id')
-    history = [h for h in history if h.get('show_id') != show_id]
+    history = [h for h in history
+               if (h.get('show_id'), h.get('kind')) != (show_id, record.get('kind'))]
     record['timestamp'] = int(time.time())
     history.insert(0, record)
     if len(history) > _MAX_HISTORY:
