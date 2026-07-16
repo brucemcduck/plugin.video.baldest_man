@@ -591,32 +591,34 @@ elif mode[0] == 'search':
     movies = []
     query = ''
 
-    # Check for q param (re-run from history) — skip dialog
+    # Check for q param (re-run from history) — use cache if available, skip dialog
     q_param = args.get('q', [None])[0]
+    cached = _read_search_cache()
     if q_param:
         query = q_param
-        shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
-        movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
-        _save_search_cache(content_type, shows, movies, query)
-        _add_search_history(query, content_type)
-    else:
-        # Check cache — skip dialog on back-navigation
-        cached = _read_search_cache()
-        if cached and cached.get('content_type') == content_type:
+        if cached and cached.get('content_type') == content_type and cached.get('query', '') == query:
             shows = cached.get('shows', [])
             movies = cached.get('movies', [])
-            query = cached.get('query', '')
         else:
-            dialog = xbmcgui.Dialog()
-            query = dialog.input(f'Search {content_type.capitalize()}',
-                                 type=xbmcgui.INPUT_ALPHANUM)
-            if not query:
-                xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
-            else:
-                shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
-                movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
-                _save_search_cache(content_type, shows, movies, query)
-                _add_search_history(query, content_type)
+            shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
+            movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
+            _save_search_cache(content_type, shows, movies, query)
+        _add_search_history(query, content_type)
+    elif cached and cached.get('content_type') == content_type:
+        shows = cached.get('shows', [])
+        movies = cached.get('movies', [])
+        query = cached.get('query', '')
+    else:
+        dialog = xbmcgui.Dialog()
+        query = dialog.input(f'Search {content_type.capitalize()}',
+                             type=xbmcgui.INPUT_ALPHANUM)
+        if not query:
+            xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+        else:
+            shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
+            movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
+            _save_search_cache(content_type, shows, movies, query)
+            _add_search_history(query, content_type)
 
     if query:
 
@@ -893,12 +895,14 @@ elif mode[0] == 'delete_history':
         _save_search_history(history)
         notify("Search history entry deleted")
     xbmcplugin.endOfDirectory(addon_handle)
+    xbmc.executebuiltin('Container.Refresh')
 
 # --- Clear all search history ---
 elif mode[0] == 'clear_history':
     _save_search_history([])
     notify("Search history cleared")
     xbmcplugin.endOfDirectory(addon_handle)
+    xbmc.executebuiltin('Container.Refresh')
 
 # --- Auth: AllDebrid PIN flow ---
 elif mode[0] == 'ad_authorize':
