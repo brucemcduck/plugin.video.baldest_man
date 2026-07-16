@@ -516,6 +516,10 @@ if mode is None:
         xbmcplugin.addDirectoryItem(addon_handle, url,
                                     xbmcgui.ListItem(label), isFolder=True)
 
+    url = build_url({'mode': 'search_history'})
+    xbmcplugin.addDirectoryItem(addon_handle, url,
+                                xbmcgui.ListItem("Search History"), isFolder=True)
+
     # Continue Watching — re-scrape last watched TMDB content
     last = ADDON.getSetting('last_played')
     if last:
@@ -587,23 +591,32 @@ elif mode[0] == 'search':
     movies = []
     query = ''
 
-    # Check cache — skip dialog on back-navigation
-    cached = _read_search_cache()
-    if cached and cached.get('content_type') == content_type:
-        shows = cached.get('shows', [])
-        movies = cached.get('movies', [])
-        query = cached.get('query', '')
+    # Check for q param (re-run from history) — skip dialog
+    q_param = args.get('q', [None])[0]
+    if q_param:
+        query = q_param
+        shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
+        movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
+        _save_search_cache(content_type, shows, movies, query)
+        _add_search_history(query, content_type)
     else:
-        dialog = xbmcgui.Dialog()
-        query = dialog.input(f'Search {content_type.capitalize()}',
-                             type=xbmcgui.INPUT_ALPHANUM)
-        if not query:
-            xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+        # Check cache — skip dialog on back-navigation
+        cached = _read_search_cache()
+        if cached and cached.get('content_type') == content_type:
+            shows = cached.get('shows', [])
+            movies = cached.get('movies', [])
+            query = cached.get('query', '')
         else:
-            shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
-            movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
-            _save_search_cache(content_type, shows, movies, query)
-            _add_search_history(query, content_type)
+            dialog = xbmcgui.Dialog()
+            query = dialog.input(f'Search {content_type.capitalize()}',
+                                 type=xbmcgui.INPUT_ALPHANUM)
+            if not query:
+                xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+            else:
+                shows = tmdb.search_shows(query, key, lang) if content_type in ('shows', 'all') else []
+                movies = tmdb.search_movies(query, key, lang) if content_type in ('movies', 'all') else []
+                _save_search_cache(content_type, shows, movies, query)
+                _add_search_history(query, content_type)
 
     if query:
 
@@ -841,6 +854,35 @@ elif mode[0] == 'quick_download':
             pass
 
     xbmcplugin.endOfDirectory(addon_handle)
+
+# --- Search History: show recent searches ---
+elif mode[0] == 'search_history':
+    history = _load_search_history()
+
+    if not history:
+        li = xbmcgui.ListItem("No search history yet")
+        xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
+    else:
+        for idx, h in enumerate(history):
+            ct = h.get('content_type', 'all')
+            ct_label = ct.capitalize()
+            query = h.get('query', '')
+            label = "[{}] {}".format(ct_label, query)
+
+            url = build_url({'mode': 'search', 'content_type': ct,
+                             'q': query})
+            li = xbmcgui.ListItem(label)
+
+            del_url = build_url({'mode': 'delete_history', 'index': str(idx)})
+            clear_url = build_url({'mode': 'clear_history'})
+            li.addContextMenuItems([
+                ('Delete', 'RunPlugin({})'.format(del_url)),
+                ('Clear All', 'RunPlugin({})'.format(clear_url)),
+            ])
+
+            xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
+
+    xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 # --- Auth: AllDebrid PIN flow ---
 elif mode[0] == 'ad_authorize':
