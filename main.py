@@ -869,7 +869,6 @@ elif mode[0] == 'quick_download':
 
     xbmcplugin.endOfDirectory(addon_handle)
 
-# --- Search History: show recent searches ---
 elif mode[0] == 'search_history':
     history = _load_search_history()
 
@@ -878,14 +877,28 @@ elif mode[0] == 'search_history':
         xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
     else:
         for idx, h in enumerate(history):
-            ct = h.get('content_type', 'all')
-            ct_label = ct.capitalize()
-            query = h.get('query', '')
-            label = "[{}] {}".format(ct_label, query)
+            if not h.get('show_id') or not h.get('kind'):
+                continue
+            kind = h.get('kind')
+            title = h.get('title', '')
+            year = h.get('year', '')
+            poster_url = h.get('poster_url', '')
+            label = f"{title} ({year})" if year else title
 
-            url = build_url({'mode': 'search', 'content_type': ct,
-                             'q': query})
+            if kind == 'show':
+                url = build_url({'mode': 'seasons',
+                                 'show_id': str(h['show_id']),
+                                 'show_title': title, 'year': year,
+                                 'poster_url': poster_url, 'src': 'search'})
+            else:
+                url = build_url({'mode': 'scrape', 'show_title': title,
+                                 'year': year, 'show_id': str(h['show_id']),
+                                 'poster_url': poster_url,
+                                 'content_type': 'movies', 'src': 'search'})
+
             li = xbmcgui.ListItem(label)
+            set_info(li, {'title': title, 'poster_url': poster_url},
+                     is_folder=True)
 
             del_url = build_url({'mode': 'delete_history', 'index': str(idx)})
             clear_url = build_url({'mode': 'clear_history'})
