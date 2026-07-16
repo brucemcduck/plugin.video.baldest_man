@@ -64,6 +64,40 @@ def clean_error(msg):
 _SEARCH_CACHE = os.path.join(tempfile.gettempdir(), "baldman_tmdb.json")
 _SCRAPE_CACHE = os.path.join(tempfile.gettempdir(), "baldman_scrape.json")
 
+_SEARCH_HISTORY = os.path.join(tempfile.gettempdir(), "baldman_search_history.json")
+_MAX_HISTORY = 20
+
+
+def _load_search_history():
+    """Load search history list. Returns [] on missing/corrupt file."""
+    try:
+        with open(_SEARCH_HISTORY) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _save_search_history(history):
+    """Write history list to JSON. Silently ignores errors."""
+    try:
+        with open(_SEARCH_HISTORY, 'w') as f:
+            json.dump(history, f)
+    except OSError:
+        pass
+
+
+def _add_search_history(query, content_type):
+    """Add or update a search entry. Dedupes by query (case-insensitive),
+    moves to front, trims to _MAX_HISTORY."""
+    history = _load_search_history()
+    query_lower = query.lower()
+    history = [h for h in history if h.get('query', '').lower() != query_lower]
+    history.insert(0, {'query': query, 'content_type': content_type,
+                       'timestamp': int(time.time())})
+    if len(history) > _MAX_HISTORY:
+        history = history[:_MAX_HISTORY]
+    _save_search_history(history)
+
 
 def _save_search_cache(content_type, shows, movies, query):
     """Save TMDB search results so back-navigation avoids re-dialog."""
