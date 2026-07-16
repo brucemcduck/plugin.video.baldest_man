@@ -16,7 +16,12 @@ import xbmcgui
 import xbmcplugin
 
 from resources.lib import scraper_runner, tmdb, download_manager
-from resources.lib.alldebrid import resolve as ad_resolve, AllDebridError
+from resources.lib.alldebrid import (resolve as ad_resolve, AllDebridError,
+                                      pin_start as ad_pin_start,
+                                      pin_poll as ad_pin_poll,
+                                      get_user as ad_get_user,
+                                      revoke as ad_revoke_auth,
+                                      validate_key as ad_validate_key)
 from resources.lib.download_manager import DownloadError
 from resources.lib.trakt import (get_device_code, poll_for_token, scrobble_start,
                                   get_watchlist, get_collection,
@@ -187,7 +192,7 @@ def add_scrape_result(item, poster_url=None, play_label=None, meta=None):
 
 
 def api_key():
-    return ADDON.getSetting('alldebrid_api_key')
+    return ADDON.getSetting('alldebridtoken')
 
 
 def tmdb_api_key():
@@ -207,6 +212,12 @@ if mode is None:
         os.remove(_SEARCH_CACHE)
     except OSError:
         pass
+
+    # One-time migration: copy old alldebrid_api_key to alldebridtoken
+    old_key = ADDON.getSetting('alldebrid_api_key')
+    new_key = ADDON.getSetting('alldebridtoken')
+    if old_key and not new_key:
+        ADDON.setSetting('alldebridtoken', old_key)
 
     for label, content_type in [
         ('Search Shows', 'shows'),
@@ -556,6 +567,87 @@ elif mode[0] == 'scrape':
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
+# --- Auth: AllDebrid PIN flow ---
+elif mode[0] == 'ad_authorize':
+    try:
+        pin_data = ad_pin_start()
+    except AllDebridError as e:
+        notify("AllDebrid: " + str(e))
+        xbmcplugin.endOfDirectory(addon_handle)
+    else:
+        msg = ("1. Go to: [COLOR skyblue]https://alldebrid.com/pin[/COLOR]\n"
+               "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
+               "3. Wait while we check...").format(pin_data["pin"])
+        xbmcgui.Dialog().ok("AllDebrid Authorization", msg)
+
+        pdlg = xbmcgui.DialogProgress()
+        pdlg.create("AllDebrid", "Waiting for authorization...")
+        try:
+            apikey = ad_pin_poll(
+                pin_data["check"], pin_data["pin"],
+                cancel_check=pdlg.iscanceled,
+                expires_in=pin_data["expires_in"])
+            if not apikey:
+                pdlg.close()
+                notify("Authorization cancelled")
+            else:
+                ADDON.setSetting('alldebridtoken', apikey)
+                try:
+                    user = ad_get_user(apikey)
+                    username = user.get("username", "")
+                    if username:
+                        ADDON.setSetting('alldebridusername', username)
+                    pdlg.close()
+                    notify("AllDebrid authorized: " + (username or "success"))
+                except AllDebridError as e:
+                    pdlg.close()
+                    ADDON.setSetting('alldebridtoken', "")
+                    notify("Authorization failed: " + str(e))
+        except AllDebridError as e:
+            pdlg.close()
+            notify("AllDebrid: " + str(e))
+
+        xbmcplugin.endOfDirectory(addon_handle)
+
+# --- Auth: AllDebrid revoke ---
+elif mode[0] == 'ad_revoke':
+    ad_revoke_auth()
+    notify("AllDebrid authorization revoked")
+    xbmcplugin.endOfDirectory(addon_handle)
+
+# --- Auth: AllDebrid account info ---
+elif mode[0] == 'ad_account_info':
+    key = ADDON.getSetting('alldebridtoken')
+    if not key:
+        notify("AllDebrid not authorized — use the PIN flow in settings")
+        xbmcplugin.endOfDirectory(addon_handle)
+    else:
+        try:
+            user = ad_get_user(key)
+        except AllDebridError as e:
+            notify("AllDebrid: " + str(e))
+            xbmcplugin.endOfDirectory(addon_handle)
+        else:
+            from datetime import datetime
+            username = user.get("username", "?")
+            is_premium = user.get("isPremium", False)
+            lines = ["AllDebrid Account", "─────────────────",
+                     "Username: {}".format(username)]
+            if is_premium:
+                premium_until = user.get("premiumUntil", 0)
+                if premium_until:
+                    expires = datetime.fromtimestamp(premium_until)
+                    days = (expires - datetime.today()).days
+                    lines.append("Status:   Premium")
+                    lines.append("Expires:  " + expires.strftime("%Y-%m-%d"))
+                    lines.append("Days remaining: {}".format(max(0, days)))
+                else:
+                    lines.append("Status:   Premium")
+            else:
+                lines.append("Status:   Free / Not Premium")
+            xbmcgui.Dialog().ok("AllDebrid Account", "\n".join(lines))
+            xbmcplugin.endOfDirectory(addon_handle)
+
 # --- Auth: Trakt device OAuth ---
 elif mode[0] == 'auth_trakt':
     client_id = ADDON.getSetting('trakt_client_id')
@@ -730,7 +822,7 @@ elif mode[0] == 'download':
     else:
         key = api_key()
         if not key:
-            notify('AllDebrid API key not set')
+            notify('AllDebrid not authorized — use the PIN flow in settings')
             xbmcplugin.endOfDirectory(addon_handle)
         else:
             # Enforce max_download_size_gb cap (the setting is otherwise decorative)
@@ -835,7 +927,7 @@ elif mode[0] == 'play':
     if ep_type == 'torrent':
         key = api_key()
         if not key:
-            notify('AllDebrid API key not set')
+            notify('AllDebrid not authorized — use the PIN flow in settings')
             xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
         else:
             pdlg = None
