@@ -651,6 +651,17 @@ elif mode[0] == 'seasons':
     show_id = int(args.get('show_id', ['0'])[0])
     show_title = args.get('show_title', [''])[0]
 
+    src = args.get('src', [''])[0]
+    if src == 'search':
+        _add_search_history({
+            'kind': 'show',
+            'show_id': show_id,
+            'title': show_title,
+            'year': args.get('year', [''])[0],
+            'poster_url': args.get('poster_url', [''])[0],
+            'content_type': 'shows',
+        })
+
     seasons = tmdb.get_seasons(show_id, tmdb_api_key(), tmdb_lang())
     for s in seasons:
         url = build_url({'mode': 'episodes', 'show_id': str(show_id),
