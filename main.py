@@ -86,14 +86,15 @@ def _save_search_history(history):
         pass
 
 
-def _add_search_history(query, content_type):
-    """Add or update a search entry. Dedupes by query (case-insensitive),
-    moves to front, trims to _MAX_HISTORY."""
+def _add_search_history(record):
+    """Add or update a history entry. Dedupes by show_id, moves to front,
+    trims to _MAX_HISTORY. record is a dict with show_id, kind, title,
+    year, poster_url, content_type; timestamp is added here."""
     history = _load_search_history()
-    query_lower = query.lower()
-    history = [h for h in history if h.get('query', '').lower() != query_lower]
-    history.insert(0, {'query': query, 'content_type': content_type,
-                       'timestamp': int(time.time())})
+    show_id = record.get('show_id')
+    history = [h for h in history if h.get('show_id') != show_id]
+    record['timestamp'] = int(time.time())
+    history.insert(0, record)
     if len(history) > _MAX_HISTORY:
         history = history[:_MAX_HISTORY]
     _save_search_history(history)
