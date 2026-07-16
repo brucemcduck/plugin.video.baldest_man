@@ -242,6 +242,13 @@ if mode is None:
             xbmcplugin.addDirectoryItem(addon_handle, url,
                                         xbmcgui.ListItem(label), isFolder=True)
 
+    # My Downloads — offline library
+    dl_count = len(download_manager.load_manifest())
+    dl_label = "My Downloads ({})".format(dl_count) if dl_count else "My Downloads"
+    url = build_url({'mode': 'my_downloads'})
+    xbmcplugin.addDirectoryItem(addon_handle, url,
+                                xbmcgui.ListItem(dl_label), isFolder=True)
+
     xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 # --- Continue Watching: re-scrape last watched ---
@@ -649,6 +656,64 @@ elif mode[0] == 'trakt_browse':
                     xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- My Downloads: offline library (no network needed) ---
+elif mode[0] == 'my_downloads':
+    items = download_manager.load_manifest()
+    if not items:
+        li = xbmcgui.ListItem("No downloads yet — use context menu on a source")
+        xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
+    else:
+        for it in items:
+            label = it.get('title', it.get('show_title', 'Unknown'))
+            if it.get('season') and it.get('episode'):
+                label = "{} S{:02d}E{:02d}".format(
+                    it.get('show_title', label),
+                    int(it['season']), int(it['episode']))
+            li = xbmcgui.ListItem(label)
+            li.setProperty('IsPlayable', 'true')
+            info = {'title': label, 'mediatype': it.get('mediatype', 'movie')}
+            if it.get('plot'):
+                info['plot'] = it['plot']
+            sz = it.get('size_bytes', 0)
+            if sz:
+                info['size'] = sz
+            li.setInfo('video', info)
+            poster = it.get('poster_path')
+            if poster and os.path.exists(poster):
+                li.setArt({'poster': poster, 'thumb': poster})
+            play_url = build_url({'mode': 'play_local', 'id': it.get('id', '')})
+            del_url = build_url({'mode': 'delete_download', 'id': it.get('id', '')})
+            li.addContextMenuItems([('Delete Download', 'RunPlugin({})'.format(del_url))])
+            xbmcplugin.addDirectoryItem(addon_handle, play_url, li, isFolder=False)
+    xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+# --- Play Local: file:// playback, zero network ---
+elif mode[0] == 'play_local':
+    item_id = args.get('id', [''])[0]
+    target = None
+    for it in download_manager.load_manifest():
+        if it.get('id') == item_id:
+            target = it
+            break
+    if target and os.path.exists(target.get('file_path', '')):
+        li = xbmcgui.ListItem(target.get('title', ''), path=target['file_path'])
+        xbmcplugin.setResolvedUrl(addon_handle, True, li)
+    else:
+        notify("File not found — it may have been deleted")
+        xbmcplugin.setResolvedUrl(addon_handle, False, xbmcgui.ListItem())
+
+# --- Delete Download: remove file + manifest entry ---
+elif mode[0] == 'delete_download':
+    item_id = args.get('id', [''])[0]
+    download_manager.remove_from_manifest(item_id)
+    notify("Download deleted")
+    try:
+        import xbmc
+        xbmc.executebuiltin('Container.Refresh')
+    except ImportError:
+        pass
+    xbmcplugin.endOfDirectory(addon_handle)
 
 # --- Download: resolve + save to disk for offline playback ---
 elif mode[0] == 'download':
