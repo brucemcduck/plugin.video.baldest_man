@@ -102,7 +102,7 @@ def pick_best_source(sources, quality, max_gb):
         quality_distance = abs(q_rank - want_rank)
         seeders = r.get('seeders') or 0
         size_bytes = _parse_size_bytes(r.get('size', '')) or 0
-        return (quality_distance, -seeders, -size_bytes)
+        return (quality_distance, -q_rank, -seeders, -size_bytes)
 
     candidates.sort(key=sort_key)
     return candidates[0]
@@ -379,6 +379,8 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
     show: TMDB show dict with at least {id, title, poster_url}.
     settings: dict from read_kodi_settings().
     Returns True on success, False on no sources or download failure.
+    Raises AllDebridError if the magnet resolution fails (caller decides
+    whether to abort or skip-and-continue).
     """
     title = show.get('title', '')
     show_id = show.get('id')
@@ -409,15 +411,11 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
 
     # Resolve magnet -> direct URL (episode-aware file picker)
     print('[alldebrid] resolving...')
-    try:
-        direct_url = alldebrid.resolve(
-            best['url'], api_key,
-            season=season, episode=episode,
-            progress_callback=_alldebrid_progress,
-        )
-    except AllDebridError as e:
-        print('[fail] S{:02d}E{:02d}: {}'.format(season, episode, e))
-        return False
+    direct_url = alldebrid.resolve(
+        best['url'], api_key,
+        season=season, episode=episode,
+        progress_callback=_alldebrid_progress,
+    )
     print('[alldebrid] ready')
 
     # Download
@@ -492,7 +490,12 @@ def download_season(show, season, episodes, quality, settings, dry_run=False):
             label += ' — {}'.format(ep_name)
         print('\n--- {} ---'.format(label))
 
-        ok = download_episode(show, season, ep_num, quality, settings, dry_run)
+        try:
+            ok = download_episode(show, season, ep_num, quality, settings, dry_run)
+        except AllDebridError as e:
+            print('[skip] {}: AllDebrid error: {}'.format(label, e))
+            skipped.append(label)
+            continue
         if ok:
             downloaded += 1
         else:
@@ -604,8 +607,11 @@ def main(argv=None):
 
         # 5. Download
         if ep_choice == 'all':
-            download_season(show, season, episodes, quality, settings,
-                            dry_run=args.dry_run)
+            downloaded, skipped = download_season(
+                show, season, episodes, quality, settings,
+                dry_run=args.dry_run)
+            if downloaded == 0:
+                return 1
         else:
             ok = download_episode(show, season, ep_choice, quality, settings,
                                   dry_run=args.dry_run)

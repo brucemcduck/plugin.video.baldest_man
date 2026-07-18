@@ -96,6 +96,16 @@ class PickBestSourceTests(unittest.TestCase):
         # No 720p source — should fall back to highest available tier (1080p)
         self.assertEqual(best['quality'], '1080p')
 
+    def test_prefers_higher_tier_on_distance_tie(self):
+        """When two tiers are equidistant from requested, higher tier wins
+        regardless of seeder count."""
+        sources = [
+            self._src('480p', '400 MB', seeders=100),
+            self._src('1080p', '2 GB', seeders=5),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '1080p')
+
     def test_drops_oversized_sources(self):
         sources = [
             self._src('720p', '3 GB', seeders=50),   # over 2 GB cap
@@ -296,6 +306,13 @@ class DownloadEpisodeTests(unittest.TestCase):
         self._orig_min_parallel = dm.MIN_PARALLEL_SIZE
         dm.MIN_PARALLEL_SIZE = 1024 * 1024  # 1 MB
 
+        # Patch get_download_dir so tests write into the temp dir instead of
+        # the user's real ~/.bald_man/downloads/ folder.
+        self._orig_get_download_dir = dm.get_download_dir
+        _downloads_dir = os.path.join(self.tmp, 'downloads')
+        os.makedirs(_downloads_dir, exist_ok=True)
+        dm.get_download_dir = lambda: _downloads_dir
+
         class RangeThrottledHandler(http.server.SimpleHTTPRequestHandler):
             CHUNK_DELAY_S = 0.002
             protocol_version = 'HTTP/1.1'
@@ -370,6 +387,7 @@ class DownloadEpisodeTests(unittest.TestCase):
         os.chdir(self._orig_cwd)
         from resources.lib import download_manager as dm
         dm.MIN_PARALLEL_SIZE = self._orig_min_parallel
+        dm.get_download_dir = self._orig_get_download_dir
         self.httpd.shutdown()
         self.httpd.server_close()
         shutil.rmtree(self.tmp, ignore_errors=True)
