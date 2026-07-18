@@ -505,9 +505,120 @@ def download_season(show, season, episodes, quality, settings, dry_run=False):
     return downloaded, len(skipped)
 
 
-def main():
-    """Entry point — implemented in Task 9."""
-    pass
+def _parse_args(argv):
+    """Parse CLI flags. Returns parsed args or raises SystemExit(exit_code)
+    on invalid input (exit 5) or --help (exit 0)."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog='cli.py',
+        description='Download shows via the bald_man addon pipeline.',
+        add_help=True,
+    )
+    parser.add_argument('--segments', type=int, default=None,
+                        help='Parallel download segments (1 = sequential). '
+                             'Overrides download_segments setting.')
+    parser.add_argument('--max-size-gb', type=int, default=None,
+                        help='Max source size in GB. '
+                             'Overrides max_download_size_gb setting.')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Scrape and pick sources but skip download.')
+
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:
+        # argparse exits with 2 on parse error; remap to our code 5.
+        # --help exits with 0; pass through.
+        if e.code == 0:
+            raise
+        raise SystemExit(5)
+
+    if args.segments is not None and args.segments < 1:
+        print('error: --segments must be >= 1', file=sys.stderr)
+        raise SystemExit(5)
+    if args.max_size_gb is not None and args.max_size_gb < 1:
+        print('error: --max-size-gb must be >= 1', file=sys.stderr)
+        raise SystemExit(5)
+
+    return args
+
+
+def main(argv=None):
+    """Entry point. Returns an exit code (0 = success)."""
+    if argv is None:
+        argv = sys.argv[1:]
+    args = _parse_args(argv)
+
+    # Read settings from Kodi's settings.xml
+    settings = read_kodi_settings(KODI_SETTINGS_PATH)
+    if not settings.get('alldebridtoken') or not settings.get('tmdb_api_key'):
+        print('error: AllDebrid token or TMDB API key not set in Kodi settings',
+              file=sys.stderr)
+        print('  expected at: {}'.format(KODI_SETTINGS_PATH), file=sys.stderr)
+        return 4
+
+    # Apply CLI overrides
+    if args.segments is not None:
+        settings['download_segments'] = str(args.segments)
+    if args.max_size_gb is not None:
+        settings['max_download_size_gb'] = str(args.max_size_gb)
+
+    try:
+        # 1. Show lookup (interactive)
+        def search_fn(query):
+            return tmdb.search_shows(
+                query,
+                settings.get('tmdb_api_key', ''),
+                settings.get('tmdb_language', 'en'),
+            )
+        show = search_and_pick(search_fn)
+        if show is None:
+            print('[tmdb] no matches')
+            return 2
+        print('[tmdb] {} -> show_id={}'.format(
+            show.get('title', '?'), show.get('id')))
+
+        # 2. Season picker
+        seasons = tmdb.get_seasons(
+            show['id'], settings.get('tmdb_api_key', ''),
+            settings.get('tmdb_language', 'en'),
+        )
+        if not seasons:
+            print('[tmdb] no seasons found for this show')
+            return 2
+        season = select_season(seasons)
+
+        # 3. Episode picker
+        episodes = tmdb.get_episodes(
+            show['id'], season, settings.get('tmdb_api_key', ''),
+            settings.get('tmdb_language', 'en'),
+        )
+        if not episodes:
+            print('[tmdb] no episodes found for season {}'.format(season))
+            return 2
+        ep_choice = select_episode(episodes)
+
+        # 4. Quality picker
+        quality = select_quality(default=settings.get('offline_quality', '720p'))
+        print('[quality] {}'.format(quality))
+
+        # 5. Download
+        if ep_choice == 'all':
+            download_season(show, season, episodes, quality, settings,
+                            dry_run=args.dry_run)
+        else:
+            ok = download_episode(show, season, ep_choice, quality, settings,
+                                  dry_run=args.dry_run)
+            if not ok:
+                return 1
+        return 0
+
+    except KeyboardInterrupt:
+        print('\n[cancelled]')
+        return 130
+    except AllDebridError as e:
+        print('[error] AllDebrid: {}'.format(e), file=sys.stderr)
+        return 3
 
 
 if __name__ == '__main__':

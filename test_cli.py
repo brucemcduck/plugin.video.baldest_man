@@ -531,5 +531,25 @@ class DownloadSeasonTests(unittest.TestCase):
             dm.manifest_path = orig_manifest_path
 
 
+class MainArgsTests(unittest.TestCase):
+    """Test argument parsing in isolation. The interactive flow is mocked."""
+
+    def test_invalid_segments_flag_exits_5(self):
+        # --segments must be a positive integer
+        with self.assertRaises(SystemExit) as cm:
+            cli.main(['--segments', '0'])
+        self.assertEqual(cm.exception.code, 5)
+
+    def test_invalid_max_size_flag_exits_5(self):
+        with self.assertRaises(SystemExit) as cm:
+            cli.main(['--max-size-gb', 'abc'])
+        self.assertEqual(cm.exception.code, 5)
+
+    def test_help_flag_exits_0(self):
+        with self.assertRaises(SystemExit) as cm:
+            cli.main(['--help'])
+        self.assertEqual(cm.exception.code, 0)
+
+
 if __name__ == '__main__':
     unittest.main()
