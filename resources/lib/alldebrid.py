@@ -1,7 +1,13 @@
 """AllDebrid API v4.1 resolver — converts magnet/torrent links to direct URLs."""
+import re
 import time
 import requests
 from requests.exceptions import RequestException
+
+VIDEO_EXTENSIONS = (
+    ".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm",
+    ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob", ".iso",
+)
 
 API = "https://api.alldebrid.com/v4"
 
@@ -27,18 +33,24 @@ def _fire_progress(cb, state, timeout, elapsed):
         cb(state, 0, timeout)
     elif state == "ready":
         cb(state, 100, 0)
+    elif not timeout:
+        # No timeout configured — report elapsed time, no ETA.
+        cb(state, 0, 0)
     else:
         pct = min(98, int(elapsed / timeout * 100))
         eta = max(0, int(timeout - elapsed))
         cb(state, pct, eta)
 
 
-def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progress_callback=None):
+def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None,
+            progress_callback=None, season=None, episode=None):
     """Resolve a magnet link or torrent URL to a direct streamable URL.
 
     Polls AllDebrid until the magnet is ready, timing out after `timeout` seconds.
     If cancel_check is provided, it's called each iteration — return True to abort.
     If progress_callback is provided, it's called as progress_callback(state, pct, eta).
+    If season and episode are provided, prefer the file matching S{season}E{episode};
+    otherwise the largest video file in the magnet is selected.
     """
     if not api_key:
         raise AllDebridError("API key not set")
@@ -59,12 +71,12 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progr
         _log("magnet_id=" + str(magnet_id))
         _fire_progress(progress_callback, "uploading", timeout, 0)
 
-        deadline = time.time() + timeout
-        start_time = deadline - timeout
+        deadline = time.time() + timeout if timeout else None
+        start_time = time.time()
         last_status = ""
         poll_count = 0
 
-        while time.time() < deadline:
+        while deadline is None or time.time() < deadline:
             if cancel_check and cancel_check():
                 raise AllDebridError("Cancelled by user")
             time.sleep(poll_interval)
@@ -108,9 +120,10 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None, progr
 
             if magnet_status in ("Ready", "4") or status_code == 4:
                 _fire_progress(progress_callback, "ready", timeout, 0)
-                file_link = _find_file_link(magnet_info.get("files", []))
+                file_link = _find_file_link(magnet_info.get("files", []),
+                                            season=season, episode=episode)
                 if not file_link:
-                    raise AllDebridError("Magnet ready but no files returned")
+                    raise AllDebridError("Magnet ready but no video files returned")
 
                 unlock_resp = requests.get(
                     API + "/link/unlock",
@@ -221,22 +234,69 @@ def validate_key(api_key):
         return False
 
 
-def _find_file_link(files):
-    """Find first downloadable file link in AllDebrid's v4.1 nested file tree.
+def _find_file_link(files, season=None, episode=None):
+    """Find the best downloadable file link in AllDebrid's v4.1 nested file tree.
+
     Tree nodes: {"n": name, "s": size, "l": link} for files,
     {"n": name, "e": [...]} or {"n": name, "files": [...]} for folders.
+
+    Selection order:
+    1. If season and episode are given, prefer the video file whose name matches
+       S{season}E{episode} (zero-padded or not, any separator).
+    2. Otherwise (or if no episode match), return the largest video file by size.
+    3. Non-video files (.txt, .nfo, .jpg, ...) are never selected.
+
+    Returns the link string, or None if no video file is found.
     """
+    videos = _collect_video_files(files)
+    if not videos:
+        return None
+
+    if season is not None and episode is not None:
+        pattern = _episode_pattern(season, episode)
+        for name, _size, link in videos:
+            if pattern.search(name):
+                return link
+
+    # Fallback: largest video file (sorted ascending, take last)
+    videos.sort(key=lambda v: v[1] or 0)
+    return videos[-1][2]
+
+
+def _collect_video_files(files, out=None):
+    """Walk the v4.1 file tree and return a flat list of (name, size, link) tuples
+    for nodes whose name ends in a known video extension. Folder nodes are
+    traversed via 'e' or 'files' keys."""
+    if out is None:
+        out = []
     if isinstance(files, list):
         for f in files:
-            if isinstance(f, dict):
-                if "l" in f and f["l"]:
-                    return f["l"]
-                for child_key in ("e", "files"):
-                    if child_key in f:
-                        result = _find_file_link(f[child_key])
-                        if result:
-                            return result
-    return None
+            if not isinstance(f, dict):
+                continue
+            name = f.get("n", "")
+            link = f.get("l")
+            if link and _is_video(name):
+                out.append((name, f.get("s", 0) or 0, link))
+                continue
+            for child_key in ("e", "files"):
+                if child_key in f:
+                    _collect_video_files(f[child_key], out)
+    return out
+
+
+def _is_video(name):
+    return name.lower().endswith(VIDEO_EXTENSIONS)
+
+
+def _episode_pattern(season, episode):
+    """Regex matching S{season}E{episode} in a filename, tolerant of zero-padding
+    and separators. Negative lookahead prevents S01E1 from matching S01E10."""
+    s = int(season)
+    e = int(episode)
+    return re.compile(
+        r"[._ -]s0*{}e0*{}(?![0-9])".format(s, e),
+        re.IGNORECASE,
+    )
 
 
 def _check_response(resp):

@@ -636,6 +636,16 @@ class MainArgsTests(unittest.TestCase):
             cli.main(['--help'])
         self.assertEqual(cm.exception.code, 0)
 
+    def test_no_magnet_timeout_flag_is_parsed(self):
+        """--no-magnet-timeout sets args.no_magnet_timeout to True."""
+        args = cli._parse_args(['--no-magnet-timeout'])
+        self.assertTrue(args.no_magnet_timeout)
+
+    def test_no_magnet_timeout_defaults_false(self):
+        """Without the flag, no_magnet_timeout is False."""
+        args = cli._parse_args([])
+        self.assertFalse(args.no_magnet_timeout)
+
 
 if __name__ == '__main__':
     unittest.main()

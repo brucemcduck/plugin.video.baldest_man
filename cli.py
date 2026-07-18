@@ -441,11 +441,16 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
 
     api_key = settings.get('alldebridtoken', '')
     num_segments = int(settings.get('download_segments', '4') or '4')
+    magnet_timeout = int(settings.get('magnet_timeout', '120') or '120')
 
     # Resolve magnet -> direct URL (episode-aware file picker)
-    print('[alldebrid] resolving...')
+    if magnet_timeout:
+        print('[alldebrid] resolving... (timeout={}s)'.format(magnet_timeout))
+    else:
+        print('[alldebrid] resolving... (no timeout)')
     direct_url = alldebrid.resolve(
         best['url'], api_key,
+        timeout=magnet_timeout,
         season=season, episode=episode,
         progress_callback=_alldebrid_progress,
     )
@@ -559,6 +564,10 @@ def _parse_args(argv):
                              'Overrides max_download_size_gb setting.')
     parser.add_argument('--dry-run', action='store_true',
                         help='Scrape and pick sources but skip download.')
+    parser.add_argument('--no-magnet-timeout', action='store_true',
+                        help='Disable the AllDebrid magnet-resolution timeout. '
+                             'Use for slow/low-seeder sources that need more '
+                             'than the configured magnet_timeout to fetch.')
 
     try:
         args = parser.parse_args(argv)
@@ -598,6 +607,8 @@ def main(argv=None):
         settings['download_segments'] = str(args.segments)
     if args.max_size_gb is not None:
         settings['max_download_size_gb'] = str(args.max_size_gb)
+    if args.no_magnet_timeout:
+        settings['magnet_timeout'] = '0'
 
     try:
         # 1. Show lookup (interactive)
