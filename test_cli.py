@@ -59,5 +59,76 @@ class ReadKodiSettingsTests(unittest.TestCase):
             os.unlink(path)
 
 
+class PickBestSourceTests(unittest.TestCase):
+    def _src(self, quality, size, seeders=10, url='magnet:fake'):
+        return {
+            'show_title': 'Show',
+            'url': url,
+            'title': 'Show.S01E01.{}.mkv'.format(quality),
+            'quality': quality,
+            'size': size,
+            'seeders': seeders,
+        }
+
+    def test_prefers_requested_quality(self):
+        sources = [
+            self._src('1080p', '1.5 GB', seeders=100),
+            self._src('720p', '800 MB', seeders=50),
+            self._src('4k', '5 GB', seeders=5),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '720p')
+
+    def test_4k_matches_2160p_alias(self):
+        sources = [
+            self._src('2160p', '5 GB', seeders=20),
+            self._src('1080p', '2 GB', seeders=100),
+        ]
+        best = cli.pick_best_source(sources, quality='4K', max_gb=10)
+        self.assertEqual(best['quality'], '2160p')
+
+    def test_falls_back_to_next_tier_when_no_exact_match(self):
+        sources = [
+            self._src('1080p', '2 GB', seeders=100),
+            self._src('480p', '400 MB', seeders=10),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        # No 720p source — should fall back to highest available tier (1080p)
+        self.assertEqual(best['quality'], '1080p')
+
+    def test_drops_oversized_sources(self):
+        sources = [
+            self._src('720p', '3 GB', seeders=50),   # over 2 GB cap
+            self._src('480p', '400 MB', seeders=10),  # under cap
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=2)
+        # 720p source dropped by size; falls back to 480p
+        self.assertEqual(best['quality'], '480p')
+
+    def test_breaks_ties_by_seeders_then_size(self):
+        sources = [
+            self._src('720p', '800 MB', seeders=30),
+            self._src('720p', '900 MB', seeders=50),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['seeders'], 50)
+
+    def test_returns_none_when_all_filtered_out(self):
+        sources = [self._src('720p', '3 GB', seeders=50)]
+        self.assertIsNone(cli.pick_best_source(sources, quality='720p', max_gb=1))
+
+    def test_returns_none_on_empty_list(self):
+        self.assertIsNone(cli.pick_best_source([], quality='720p', max_gb=10))
+
+    def test_unknown_quality_falls_to_rank_0(self):
+        # Sources with no quality string still get considered, ranked last
+        sources = [
+            self._src('', '500 MB', seeders=5),
+            self._src('720p', '800 MB', seeders=10),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '720p')
+
+
 if __name__ == '__main__':
     unittest.main()
