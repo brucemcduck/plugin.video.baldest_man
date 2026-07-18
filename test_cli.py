@@ -448,5 +448,88 @@ class DownloadEpisodeTests(unittest.TestCase):
             dm.manifest_path = orig_manifest_path
 
 
+class DownloadSeasonTests(unittest.TestCase):
+    """Season-batch flow with mocked scrape/resolve. Three episodes: two
+    succeed, one has no sources and is skipped without aborting the batch.
+    """
+    def setUp(self):
+        # Reuse the HTTP server setup from DownloadEpisodeTests
+        self._http_setup = DownloadEpisodeTests.setUp(self)
+        # Override scrape to return sources for episodes 1 and 3, none for 2
+        self._ep_sources = {
+            1: [{'show_title': 'Show', 'url': 'magnet:e1',
+                 'title': 'Show.S01E01.720p.mkv', 'quality': '720p',
+                 'size': '4 MB', 'seeders': 50}],
+            3: [{'show_title': 'Show', 'url': 'magnet:e3',
+                 'title': 'Show.S01E03.720p.mkv', 'quality': '720p',
+                 'size': '4 MB', 'seeders': 50}],
+        }
+
+    def tearDown(self):
+        DownloadEpisodeTests.tearDown(self)
+
+    def test_batch_downloads_available_episodes_and_skips_missing(self):
+        from resources.lib import download_manager as dm
+
+        show = {'id': 1396, 'title': 'Show', 'year': '2008', 'poster_url': None}
+        episodes = [
+            {'episode_number': 1, 'name': 'Ep1'},
+            {'episode_number': 2, 'name': 'Ep2'},
+            {'episode_number': 3, 'name': 'Ep3'},
+        ]
+
+        # Patch scraper_runner.search_all to return per-episode sources
+        orig_search_all = cli.scraper_runner.search_all
+        def fake_search(query, content_type='all'):
+            # query is 'Show S01E{N}'; extract episode number
+            import re
+            m = re.search(r'E(\d+)', query)
+            if not m:
+                return []
+            ep = int(m.group(1))
+            return self._ep_sources.get(ep, [])
+        cli.scraper_runner.search_all = fake_search
+
+        # Patch alldebrid.resolve to return the local file URL
+        orig_resolve = cli.alldebrid.resolve
+        cli.alldebrid.resolve = lambda url, api_key, **kw: self.file_url
+
+        # Patch tmdb.get_imdb_id
+        orig_get_imdb = cli.tmdb.get_imdb_id
+        cli.tmdb.get_imdb_id = lambda show_id, api_key, is_movie=False: 'tt0000000'
+
+        # Temp manifest
+        orig_manifest_path = dm.manifest_path
+        self.manifest_path = os.path.join(self.tmp, 'season_manifest.json')
+        dm.manifest_path = lambda: self.manifest_path
+
+        settings = {
+            'alldebridtoken': 'FAKE',
+            'tmdb_api_key': 'FAKE',
+            'offline_quality': '720p',
+            'download_segments': '2',
+            'max_download_size_gb': '10',
+        }
+
+        try:
+            downloaded, skipped = cli.download_season(
+                show, season=1, episodes=episodes, quality='720p',
+                settings=settings, dry_run=False)
+            self.assertEqual(downloaded, 2)
+            self.assertEqual(skipped, 1)
+
+            # Manifest has two entries (episodes 1 and 3)
+            import json
+            with open(self.manifest_path) as f:
+                manifest = json.load(f)
+            ep_nums = sorted(e['episode'] for e in manifest)
+            self.assertEqual(ep_nums, [1, 3])
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
+            cli.tmdb.get_imdb_id = orig_get_imdb
+            dm.manifest_path = orig_manifest_path
+
+
 if __name__ == '__main__':
     unittest.main()

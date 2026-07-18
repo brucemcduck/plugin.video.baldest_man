@@ -471,6 +471,40 @@ def _alldebrid_progress(state, pct, eta):
     print('[alldebrid] {}... {}%'.format(state, pct), file=sys.stderr)
 
 
+def download_season(show, season, episodes, quality, settings, dry_run=False):
+    """Download every episode in a season. Skips episodes with no sources
+    or download failures; continues the batch. Returns (downloaded, skipped).
+
+    episodes: list of TMDB episode dicts (from tmdb.get_episodes), each with
+    at least {episode_number, name}.
+    """
+    title = show.get('title', '')
+    downloaded = 0
+    skipped = []
+
+    for ep in episodes:
+        ep_num = ep.get('episode_number')
+        if ep_num is None:
+            continue
+        ep_name = ep.get('name', '')
+        label = 'S{:02d}E{:02d}'.format(season, ep_num)
+        if ep_name:
+            label += ' — {}'.format(ep_name)
+        print('\n--- {} ---'.format(label))
+
+        ok = download_episode(show, season, ep_num, quality, settings, dry_run)
+        if ok:
+            downloaded += 1
+        else:
+            skipped.append(label)
+
+    print('\n--- Summary ---')
+    print('Downloaded {}/{} episodes.'.format(downloaded, len(episodes)))
+    if skipped:
+        print('Skipped: {}'.format(', '.join(skipped)))
+    return downloaded, len(skipped)
+
+
 def main():
     """Entry point — implemented in Task 9."""
     pass
