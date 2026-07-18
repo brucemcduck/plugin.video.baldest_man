@@ -348,6 +348,27 @@ def select_episode(episodes):
     return arrow_select(opts, 'Episodes:', default=0)
 
 
+def _fmt_mb(bytes_val):
+    """Format bytes as MB with no decimals."""
+    return '{} MB'.format(bytes_val // (1024 * 1024))
+
+
+def make_progress_callback():
+    """Return a progress_callback(written, total, pct) that prints a live
+    single-line progress meter to stderr using carriage return.
+    """
+    def cb(written, total, pct):
+        line = '\r[download] {} / {} ({}%)'.format(
+            _fmt_mb(written), _fmt_mb(total), pct)
+        sys.stderr.write(line)
+        sys.stderr.flush()
+        # Clear the line when complete
+        if total and written >= total:
+            sys.stderr.write('\n')
+            sys.stderr.flush()
+    return cb
+
+
 def main():
     """Entry point — implemented in Task 9."""
     pass
