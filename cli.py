@@ -117,6 +117,55 @@ def episode_already_downloaded(dest_path, expected_size):
         return False
 
 
+def build_season_options(seasons):
+    """Convert tmdb.get_seasons() result into arrow_select options.
+
+    Returns list of (season_number, 'Name (N episodes)').
+    """
+    opts = []
+    for s in seasons:
+        sn = s.get('season_number')
+        if sn is None:
+            continue
+        name = s.get('name') or 'Season {}'.format(sn)
+        count = s.get('episode_count', 0)
+        opts.append((sn, '{} ({} episodes)'.format(name, count)))
+    return opts
+
+
+def build_episode_options(episodes):
+    """Convert tmdb.get_episodes() result into arrow_select options.
+
+    First option is always ('all', 'Whole season'). Remaining options are
+    (episode_number, 'E{n} — {name}') or 'E{n}' if name is empty.
+    """
+    opts = [('all', 'Whole season')]
+    for ep in episodes:
+        en = ep.get('episode_number')
+        if en is None:
+            continue
+        name = (ep.get('name') or '').strip()
+        label = 'E{} — {}'.format(en, name) if name else 'E{}'.format(en)
+        opts.append((en, label))
+    return opts
+
+
+def build_quality_options(default='720p'):
+    """Return (options, default_index) for the quality arrow_select menu.
+
+    options is a list of (value, label) tuples. default_index points at the
+    option matching the addon's offline_quality setting, or 0 if unknown.
+    """
+    opts = [(q, q) for q in QUALITY_OPTIONS]
+    default_norm = (default or '').lower()
+    if default_norm == '4k':
+        default_norm = '4K'
+    for i, (val, _) in enumerate(opts):
+        if val.lower() == default_norm.lower():
+            return opts, i
+    return opts, 0
+
+
 def main():
     """Entry point — implemented in Task 9."""
     pass

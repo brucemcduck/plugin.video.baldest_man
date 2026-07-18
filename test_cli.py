@@ -163,5 +163,48 @@ class EpisodeAlreadyDownloadedTests(unittest.TestCase):
         self.assertFalse(cli.episode_already_downloaded('/nonexistent.mkv', 1024))
 
 
+class OptionBuilderTests(unittest.TestCase):
+    def test_build_season_options_renders_count(self):
+        seasons = [
+            {'season_number': 1, 'episode_count': 7, 'name': 'Season 1'},
+            {'season_number': 2, 'episode_count': 13, 'name': 'Season 2'},
+        ]
+        opts = cli.build_season_options(seasons)
+        self.assertEqual(opts, [(1, 'Season 1 (7 episodes)'),
+                                (2, 'Season 2 (13 episodes)')])
+
+    def test_build_season_options_uses_name_when_present(self):
+        seasons = [{'season_number': 1, 'episode_count': 7, 'name': 'Breaking Bad'}]
+        opts = cli.build_season_options(seasons)
+        self.assertEqual(opts[0], (1, 'Breaking Bad (7 episodes)'))
+
+    def test_build_season_options_empty_list(self):
+        self.assertEqual(cli.build_season_options([]), [])
+
+    def test_build_episode_options_prepends_whole_season(self):
+        episodes = [
+            {'episode_number': 1, 'name': 'Seven Thirty-Seven'},
+            {'episode_number': 2, 'name': 'Grilled'},
+        ]
+        opts = cli.build_episode_options(episodes)
+        self.assertEqual(opts[0], ('all', 'Whole season'))
+        self.assertEqual(opts[1], (1, 'E1 — Seven Thirty-Seven'))
+        self.assertEqual(opts[2], (2, 'E2 — Grilled'))
+
+    def test_build_episode_options_handles_missing_name(self):
+        episodes = [{'episode_number': 3, 'name': ''}]
+        opts = cli.build_episode_options(episodes)
+        self.assertEqual(opts[1], (3, 'E3'))
+
+    def test_build_quality_options_returns_four_tiers(self):
+        opts, default_idx = cli.build_quality_options(default='720p')
+        self.assertEqual([v for v, _ in opts], ['4K', '1080p', '720p', '480p'])
+        self.assertEqual(default_idx, 2)  # 720p is 3rd (0-indexed 2)
+
+    def test_build_quality_options_unknown_default_uses_first(self):
+        opts, default_idx = cli.build_quality_options(default='unknown')
+        self.assertEqual(default_idx, 0)
+
+
 if __name__ == '__main__':
     unittest.main()
