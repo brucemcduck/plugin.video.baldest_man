@@ -116,6 +116,7 @@ $ cli.py
 
   Select preferred quality:
     4K
+    1080p
   > 720p
     480p
 
