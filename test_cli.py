@@ -206,5 +206,72 @@ class OptionBuilderTests(unittest.TestCase):
         self.assertEqual(default_idx, 0)
 
 
+class ArrowSelectFallbackTests(unittest.TestCase):
+    def test_returns_selected_value(self):
+        opts = [(1, 'one'), (2, 'two'), (3, 'three')]
+        inputs = iter(['2'])
+        result = cli.arrow_select_fallback(opts, 'Pick: ', input_fn=lambda _: next(inputs))
+        self.assertEqual(result, 2)
+
+    def test_first_option_is_index_one(self):
+        opts = [('a', 'A'), ('b', 'B')]
+        inputs = iter(['1'])
+        result = cli.arrow_select_fallback(opts, 'Pick: ', input_fn=lambda _: next(inputs))
+        self.assertEqual(result, 'a')
+
+    def test_re_prompts_on_out_of_range(self):
+        opts = [(1, 'one'), (2, 'two')]
+        inputs = iter(['0', '5', '2'])
+        result = cli.arrow_select_fallback(opts, 'Pick: ', input_fn=lambda _: next(inputs))
+        self.assertEqual(result, 2)
+
+    def test_re_prompts_on_non_integer(self):
+        opts = [(1, 'one'), (2, 'two')]
+        inputs = iter(['x', '1'])
+        result = cli.arrow_select_fallback(opts, 'Pick: ', input_fn=lambda _: next(inputs))
+        self.assertEqual(result, 1)
+
+    def test_q_raises_keyboard_interrupt(self):
+        opts = [(1, 'one')]
+        with self.assertRaises(KeyboardInterrupt):
+            cli.arrow_select_fallback(opts, 'Pick: ', input_fn=lambda _: 'q')
+
+
+class SearchAndPickFallbackTests(unittest.TestCase):
+    def test_returns_chosen_match(self):
+        matches = [
+            {'id': 1, 'title': 'Breaking Bad', 'year': '2008'},
+            {'id': 2, 'title': 'Better Call Saul', 'year': '2015'},
+        ]
+        def fake_search(query):
+            return matches
+        inputs = iter(['breaking bad', '1'])
+        result = cli.search_and_pick_fallback(fake_search, input_fn=lambda _: next(inputs))
+        self.assertEqual(result['id'], 1)
+
+    def test_re_prompts_on_empty_query(self):
+        matches = [{'id': 1, 'title': 'Show', 'year': '2000'}]
+        def fake_search(query):
+            return matches
+        inputs = iter(['', 'show', '1'])
+        result = cli.search_and_pick_fallback(fake_search, input_fn=lambda _: next(inputs))
+        self.assertEqual(result['id'], 1)
+
+    def test_returns_none_on_zero_tmdb_matches(self):
+        def fake_search(query):
+            return []
+        inputs = iter(['unknown show'])
+        result = cli.search_and_pick_fallback(fake_search, input_fn=lambda _: next(inputs))
+        self.assertIsNone(result)
+
+    def test_q_during_pick_raises_keyboard_interrupt(self):
+        matches = [{'id': 1, 'title': 'Show', 'year': '2000'}]
+        def fake_search(query):
+            return matches
+        inputs = iter(['show', 'q'])
+        with self.assertRaises(KeyboardInterrupt):
+            cli.search_and_pick_fallback(fake_search, input_fn=lambda _: next(inputs))
+
+
 if __name__ == '__main__':
     unittest.main()

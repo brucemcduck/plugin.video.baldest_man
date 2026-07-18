@@ -166,6 +166,66 @@ def build_quality_options(default='720p'):
     return opts, 0
 
 
+def arrow_select_fallback(options, label, input_fn=input):
+    """Non-curses fallback: numbered list prompt.
+
+    Used when stdin is not a TTY or curses is unavailable. Reads a 1-based
+    index from input_fn, returns the value at that index. Re-prompts on
+    out-of-range or non-integer input. 'q' raises KeyboardInterrupt.
+    """
+    while True:
+        print(label)
+        for i, (_, display) in enumerate(options, start=1):
+            print('  {}. {}'.format(i, display))
+        choice = input_fn('> ').strip()
+        if choice.lower() == 'q':
+            raise KeyboardInterrupt
+        try:
+            idx = int(choice)
+        except ValueError:
+            print('  invalid: enter a number 1-{} or q to cancel'.format(len(options)))
+            continue
+        if idx < 1 or idx > len(options):
+            print('  out of range: enter 1-{}'.format(len(options)))
+            continue
+        return options[idx - 1][0]
+
+
+def search_and_pick_fallback(search_fn, input_fn=input):
+    """Non-curses fallback for show lookup: type query, pick from results.
+
+    Prompts for a search query, calls search_fn(query), prints numbered
+    matches, returns the chosen match dict. Re-prompts on empty query or
+    invalid pick. Returns None if search_fn returns []. 'q' raises
+    KeyboardInterrupt.
+    """
+    while True:
+        query = input_fn('Search: ').strip()
+        if query.lower() == 'q':
+            raise KeyboardInterrupt
+        if not query:
+            print('  enter a show name to search')
+            continue
+        matches = search_fn(query)
+        if not matches:
+            return None
+        print('  TMDB matches:')
+        for i, m in enumerate(matches, start=1):
+            print('  {}. {} ({})'.format(i, m.get('title', '?'), m.get('year', '')))
+        choice = input_fn('Pick [1-{}]: '.format(len(matches))).strip()
+        if choice.lower() == 'q':
+            raise KeyboardInterrupt
+        try:
+            idx = int(choice)
+        except ValueError:
+            print('  invalid: enter a number')
+            continue
+        if idx < 1 or idx > len(matches):
+            print('  out of range: enter 1-{}'.format(len(matches)))
+            continue
+        return matches[idx - 1]
+
+
 def main():
     """Entry point — implemented in Task 9."""
     pass
