@@ -11,6 +11,10 @@ import os
 import sys
 import xml.etree.ElementTree as ET
 
+from resources.lib import scraper_runner, alldebrid, download_manager, tmdb
+from resources.lib.alldebrid import AllDebridError
+from resources.lib.download_manager import DownloadError
+
 
 KODI_SETTINGS_PATH = os.path.expanduser(
     '~/.kodi/userdata/addon_data/plugin.video.baldest_man/settings.xml')
@@ -367,6 +371,104 @@ def make_progress_callback():
             sys.stderr.write('\n')
             sys.stderr.flush()
     return cb
+
+
+def download_episode(show, season, episode, quality, settings, dry_run=False):
+    """Run the scrape -> resolve -> download -> manifest flow for one episode.
+
+    show: TMDB show dict with at least {id, title, poster_url}.
+    settings: dict from read_kodi_settings().
+    Returns True on success, False on no sources or download failure.
+    """
+    title = show.get('title', '')
+    show_id = show.get('id')
+    poster_url = show.get('poster_url')
+
+    query = build_query(title, season, episode)
+    print('[scrape] searching for {}'.format(query))
+    sources = scraper_runner.search_all(query, content_type='shows')
+    if not sources:
+        print('[scrape] no sources found')
+        return False
+    print('[scrape] {} sources found'.format(len(sources)))
+
+    max_gb = int(settings.get('max_download_size_gb', '2') or '2')
+    best = pick_best_source(sources, quality=quality, max_gb=max_gb)
+    if not best:
+        print('[scrape] no sources passed quality/size filters')
+        return False
+    print('[scrape] best: {} ({}, {} seeders)'.format(
+        best.get('title', ''), best.get('size', '?'), best.get('seeders', 0)))
+
+    if dry_run:
+        print('[dry-run] would download from {}'.format(best.get('url', '')))
+        return True
+
+    api_key = settings.get('alldebridtoken', '')
+    num_segments = int(settings.get('download_segments', '4') or '4')
+
+    # Resolve magnet -> direct URL (episode-aware file picker)
+    print('[alldebrid] resolving...')
+    try:
+        direct_url = alldebrid.resolve(
+            best['url'], api_key,
+            season=season, episode=episode,
+            progress_callback=_alldebrid_progress,
+        )
+    except AllDebridError as e:
+        print('[fail] S{:02d}E{:02d}: {}'.format(season, episode, e))
+        return False
+    print('[alldebrid] ready')
+
+    # Download
+    dest_dir = download_manager.get_download_dir()
+    fname = download_manager.safe_filename(title, season, episode)
+    dest = os.path.join(dest_dir, fname)
+
+    print('[download] -> {}'.format(dest))
+    progress_cb = make_progress_callback()
+    try:
+        ok = download_manager.download_video(
+            direct_url, dest,
+            num_segments=num_segments,
+            progress_callback=progress_cb,
+        )
+    except DownloadError as e:
+        print('[fail] download error: {}'.format(e))
+        return False
+    if not ok:
+        print('[fail] download cancelled or failed')
+        return False
+
+    # Cache artwork
+    poster_local = None
+    if poster_url:
+        poster_local = download_manager.cache_artwork(
+            poster_url, os.path.join(download_manager.art_dir(),
+                                     fname + '.poster.jpg'))
+
+    # Add to manifest — same shape as main.py:477-489
+    entry = {
+        'id': fname,
+        'title': '{} S{:02d}E{:02d}'.format(title, season, episode),
+        'show_title': title,
+        'season': season,
+        'episode': episode,
+        'file_path': dest,
+        'size_bytes': os.path.getsize(dest),
+        'date_added': int(__import__('time').time()),
+        'mediatype': 'episode',
+        'plot': '',
+        'poster_path': poster_local,
+    }
+    download_manager.add_to_manifest(entry)
+    print('Done: {}'.format(dest))
+    return True
+
+
+def _alldebrid_progress(state, pct, eta):
+    """Print AllDebrid magnet-resolution progress to stderr."""
+    print('[alldebrid] {}... {}%'.format(state, pct), file=sys.stderr)
 
 
 def main():

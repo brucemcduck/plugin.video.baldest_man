@@ -273,5 +273,180 @@ class SearchAndPickFallbackTests(unittest.TestCase):
             cli.search_and_pick_fallback(fake_search, input_fn=lambda _: next(inputs))
 
 
+class DownloadEpisodeTests(unittest.TestCase):
+    """Integration test for download_episode with mocked TMDB/AllDebrid
+    and a local throttled Range-supporting HTTP server (same pattern as
+    test_download_manager.py's ParallelDownloadIntegrationTests).
+    """
+    def setUp(self):
+        import http.server
+        import socketserver
+        import threading
+        import time
+        self.tmp = tempfile.mkdtemp()
+        # 4 MB payload — small enough for fast tests, large enough that the
+        # parallel downloader is exercised when MIN_PARALLEL_SIZE is lowered.
+        self.payload = bytes((i * 7 + 13) & 0xFF for i in range(4 * 1024 * 1024))
+        self.served_path = os.path.join(self.tmp, 'source.bin')
+        with open(self.served_path, 'wb') as f:
+            f.write(self.payload)
+
+        # Lower the parallel threshold so the 4 MB payload uses parallel mode
+        from resources.lib import download_manager as dm
+        self._orig_min_parallel = dm.MIN_PARALLEL_SIZE
+        dm.MIN_PARALLEL_SIZE = 1024 * 1024  # 1 MB
+
+        class RangeThrottledHandler(http.server.SimpleHTTPRequestHandler):
+            CHUNK_DELAY_S = 0.002
+            protocol_version = 'HTTP/1.1'
+
+            def do_GET(self):
+                path = self.translate_path(self.path)
+                try:
+                    f = open(path, 'rb')
+                except OSError:
+                    self.send_error(404)
+                    return
+                try:
+                    fs = os.fstat(f.fileno())
+                    total = fs.st_size
+                    range_header = self.headers.get('Range')
+                    if range_header and range_header.startswith('bytes='):
+                        spec = range_header[6:]
+                        parts = spec.split('-', 1)
+                        start = int(parts[0]) if parts[0] else 0
+                        end = int(parts[1]) if parts[1] else total - 1
+                        end = min(end, total - 1)
+                        length = end - start + 1
+                        self.send_response(206)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Length', str(length))
+                        self.send_header('Content-Range',
+                                         'bytes {}-{}/{}'.format(start, end, total))
+                        self.send_header('Accept-Ranges', 'bytes')
+                        self.end_headers()
+                        f.seek(start)
+                        remaining = length
+                        while remaining > 0:
+                            buf = f.read(min(65536, remaining))
+                            if not buf:
+                                break
+                            self.wfile.write(buf)
+                            self.wfile.flush()
+                            time.sleep(self.CHUNK_DELAY_S)
+                            remaining -= len(buf)
+                    else:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Length', str(total))
+                        self.send_header('Accept-Ranges', 'bytes')
+                        self.end_headers()
+                        while True:
+                            buf = f.read(65536)
+                            if not buf:
+                                break
+                            self.wfile.write(buf)
+                            self.wfile.flush()
+                            time.sleep(self.CHUNK_DELAY_S)
+                finally:
+                    f.close()
+
+            def log_message(self, *a, **kw):
+                pass
+
+        socketserver.TCPServer.allow_reuse_address = True
+        self.httpd = socketserver.ThreadingTCPServer(
+            ('127.0.0.1', 0), RangeThrottledHandler)
+        self.port = self.httpd.server_address[1]
+        self.server_thread = threading.Thread(target=self.httpd.serve_forever,
+                                              daemon=True)
+        self.server_thread.start()
+        self.file_url = 'http://127.0.0.1:{}/source.bin'.format(self.port)
+        self._orig_cwd = os.getcwd()
+        os.chdir(self.tmp)
+
+    def tearDown(self):
+        import shutil
+        os.chdir(self._orig_cwd)
+        from resources.lib import download_manager as dm
+        dm.MIN_PARALLEL_SIZE = self._orig_min_parallel
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_downloads_episode_and_adds_to_manifest(self):
+        """End-to-end: mocked scrape returns one source, mocked resolve
+        returns the local file URL, download_video fetches it, manifest
+        gets a new entry with the expected shape."""
+        from resources.lib import download_manager as dm
+
+        show = {'id': 1396, 'title': 'Breaking Bad', 'year': '2008',
+                'poster_url': None}
+        fake_source = {
+            'show_title': 'Breaking Bad',
+            'url': 'magnet:fake',
+            'title': 'Breaking.Bad.S01E03.720p.mkv',
+            'quality': '720p',
+            'size': '4 MB',
+            'seeders': 50,
+        }
+
+        # Patch scraper_runner.search_all to return our fake source
+        orig_search_all = cli.scraper_runner.search_all
+        cli.scraper_runner.search_all = lambda q, content_type='all': [fake_source]
+
+        # Patch alldebrid.resolve to return the local file URL
+        orig_resolve = cli.alldebrid.resolve
+        cli.alldebrid.resolve = lambda url, api_key, **kw: self.file_url
+
+        # Patch tmdb.get_imdb_id to return a fake imdb id
+        orig_get_imdb = cli.tmdb.get_imdb_id
+        cli.tmdb.get_imdb_id = lambda show_id, api_key, is_movie=False: 'tt0903747'
+
+        # Point manifest at a temp file so we don't clobber the real one
+        orig_manifest_path = dm.manifest_path
+        self.manifest_path = os.path.join(self.tmp, 'downloads.json')
+        dm.manifest_path = lambda: self.manifest_path
+
+        settings = {
+            'alldebridtoken': 'FAKE',
+            'tmdb_api_key': 'FAKE',
+            'offline_quality': '720p',
+            'download_segments': '4',
+            'max_download_size_gb': '10',
+        }
+
+        try:
+            ok = cli.download_episode(
+                show, season=1, episode=3, quality='720p',
+                settings=settings, dry_run=False)
+            self.assertTrue(ok)
+
+            # File landed on disk with the right content
+            dest = os.path.join(dm.get_download_dir(),
+                                'Breaking.Bad.S01E03.mp4')
+            self.assertTrue(os.path.exists(dest))
+            with open(dest, 'rb') as f:
+                self.assertEqual(f.read(), self.payload)
+
+            # Manifest has one entry with the expected shape
+            import json
+            with open(self.manifest_path) as f:
+                manifest = json.load(f)
+            self.assertEqual(len(manifest), 1)
+            entry = manifest[0]
+            self.assertEqual(entry['show_title'], 'Breaking Bad')
+            self.assertEqual(entry['season'], 1)
+            self.assertEqual(entry['episode'], 3)
+            self.assertEqual(entry['mediatype'], 'episode')
+            self.assertIn('file_path', entry)
+            self.assertIn('date_added', entry)
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
+            cli.tmdb.get_imdb_id = orig_get_imdb
+            dm.manifest_path = orig_manifest_path
+
+
 if __name__ == '__main__':
     unittest.main()
