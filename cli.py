@@ -109,8 +109,13 @@ def pick_best_source(sources, quality, max_gb):
 
 
 def build_query(title, season, episode):
-    """Build the scraper query string: 'Title S01E03' (zero-padded)."""
-    return "{} S{:02d}E{:02d}".format(title, int(season), int(episode))
+    """Build the scraper query string: 'Title S01E03' (zero-padded).
+
+    Strips apostrophes from the title — some scraper APIs (e.g. PirateBay)
+    return zero results for queries containing apostrophes.
+    """
+    clean_title = title.replace("'", '').replace('\u2019', '')
+    return "{} S{:02d}E{:02d}".format(clean_title, int(season), int(episode))
 
 
 def episode_already_downloaded(dest_path, expected_size):
@@ -373,6 +378,34 @@ def make_progress_callback():
     return cb
 
 
+def _search_with_retry(query, content_type='shows'):
+    """Search scrapers; if no results, retry with progressively shorter queries.
+
+    Drops leading words from the title portion (keeping the S01E01 code) to
+    handle shows whose full title doesn't match torrent names well — e.g.
+    "It's Always Sunny in Philadelphia" → try "Always Sunny in Philadelphia",
+    then "Sunny in Philadelphia", etc.
+    """
+    sources = scraper_runner.search_all(query, content_type=content_type)
+    if sources:
+        return sources
+
+    parts = query.rsplit(' S', 1)
+    if len(parts) != 2:
+        return []
+    title_part, ep_part = parts[0], 'S' + parts[1]
+    words = title_part.split()
+
+    for n in range(len(words) - 1, 0, -1):
+        shorter = ' '.join(words[len(words) - n:]) + ' ' + ep_part
+        print('[scrape] retrying with: {}'.format(shorter))
+        sources = scraper_runner.search_all(shorter, content_type=content_type)
+        if sources:
+            return sources
+
+    return []
+
+
 def download_episode(show, season, episode, quality, settings, dry_run=False):
     """Run the scrape -> resolve -> download -> manifest flow for one episode.
 
@@ -388,7 +421,7 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
 
     query = build_query(title, season, episode)
     print('[scrape] searching for {}'.format(query))
-    sources = scraper_runner.search_all(query, content_type='shows')
+    sources = _search_with_retry(query, content_type='shows')
     if not sources:
         print('[scrape] no sources found')
         return False

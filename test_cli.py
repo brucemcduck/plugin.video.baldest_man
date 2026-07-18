@@ -149,6 +149,74 @@ class BuildQueryTests(unittest.TestCase):
         self.assertEqual(cli.build_query("Show", 10, 12),
                          "Show S10E12")
 
+    def test_strips_apostrophes(self):
+        self.assertEqual(cli.build_query("It's Always Sunny", 1, 1),
+                         "Its Always Sunny S01E01")
+
+    def test_strips_smart_quotes(self):
+        self.assertEqual(cli.build_query("It\u2019s Always Sunny", 1, 1),
+                         "Its Always Sunny S01E01")
+
+
+class SearchWithRetryTests(unittest.TestCase):
+    def test_returns_first_results_without_retry(self):
+        calls = []
+        def fake_search(query, content_type='shows'):
+            calls.append(query)
+            return [{'show_title': 'Test', 'url': 'magnet:...', 'title': 'T',
+                     'quality': '720p', 'size': '1 GB', 'seeders': 5}]
+        orig = cli.scraper_runner.search_all
+        cli.scraper_runner.search_all = fake_search
+        try:
+            result = cli._search_with_retry("Breaking Bad S01E01")
+            self.assertEqual(len(result), 1)
+            self.assertEqual(len(calls), 1)
+        finally:
+            cli.scraper_runner.search_all = orig
+
+    def test_retries_shorter_query_on_zero_results(self):
+        calls = []
+        def fake_search(query, content_type='shows'):
+            calls.append(query)
+            if query == "Always Sunny in Philadelphia S01E01":
+                return [{'show_title': 'Test', 'url': 'magnet:...', 'title': 'T',
+                         'quality': '720p', 'size': '1 GB', 'seeders': 5}]
+            return []
+        orig = cli.scraper_runner.search_all
+        cli.scraper_runner.search_all = fake_search
+        try:
+            result = cli._search_with_retry("Its Always Sunny in Philadelphia S01E01")
+            self.assertEqual(len(result), 1)
+            self.assertGreater(len(calls), 1)
+            self.assertIn("Always Sunny in Philadelphia S01E01", calls)
+        finally:
+            cli.scraper_runner.search_all = orig
+
+    def test_returns_empty_when_all_retries_fail(self):
+        def fake_search(query, content_type='shows'):
+            return []
+        orig = cli.scraper_runner.search_all
+        cli.scraper_runner.search_all = fake_search
+        try:
+            result = cli._search_with_retry("Some Show S01E01")
+            self.assertEqual(result, [])
+        finally:
+            cli.scraper_runner.search_all = orig
+
+    def test_no_retry_for_single_word_title(self):
+        calls = []
+        def fake_search(query, content_type='shows'):
+            calls.append(query)
+            return []
+        orig = cli.scraper_runner.search_all
+        cli.scraper_runner.search_all = fake_search
+        try:
+            result = cli._search_with_retry("Show S01E01")
+            self.assertEqual(result, [])
+            self.assertEqual(len(calls), 1)
+        finally:
+            cli.scraper_runner.search_all = orig
+
 
 class EpisodeAlreadyDownloadedTests(unittest.TestCase):
     def test_true_when_file_exists_with_matching_size(self):

@@ -90,14 +90,32 @@ def _worker_count():
         return DEFAULT_WORKERS
 
 
+RELEVANCE_STOP_WORDS = {'the', 'a', 'an', 'in', 'of', 'and', 'is', 'it', 's',
+                        'to', 'for', 'on', 'at', 'by', 'with', 'its'}
+
+
+def _is_subsequence(small, large):
+    """True if small is a subsequence of large (same relative order)."""
+    it = iter(large)
+    return all(w in it for w in small)
+
+
 def _relevant(query, show_title):
     """True if query matches show_title, case-insensitive, punctuation-normalized.
-    Bidirectional: handles both broad queries and precise queries like
-    "Show S01E05" (show_title = "Show") or "Movie 1999" (show_title has "(1999)").
+
+    Token-subsequence matching: strips apostrophes, episode codes (S01E05), and
+    stop words, then checks if one token list is a subsequence of the other.
+    This handles long show titles where torrent names use shortened forms
+    (e.g. 'Its.Always.Sunny' for "It's Always Sunny in Philadelphia").
     """
-    qn = re.sub(r'[^\w\s]', '', query.lower())
-    sn = re.sub(r'[^\w\s]', '', show_title.lower())
-    return qn in sn or sn in qn
+    qn = re.sub(r"[^\w\s']", ' ', query.lower()).replace("'", ' ')
+    sn = re.sub(r"[^\w\s']", ' ', show_title.lower()).replace("'", ' ')
+    qn = re.sub(r'\bs\d+e\d+\b', '', qn)
+    q_words = [w for w in qn.split() if w not in RELEVANCE_STOP_WORDS and len(w) > 1]
+    s_words = [w for w in sn.split() if w not in RELEVANCE_STOP_WORDS and len(w) > 1]
+    if not q_words or not s_words:
+        return False
+    return _is_subsequence(q_words, s_words) or _is_subsequence(s_words, q_words)
 
 
 def _log(msg):
