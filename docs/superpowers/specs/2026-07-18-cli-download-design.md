@@ -54,20 +54,32 @@ as `check_scrapers.py`, which already imports `scrapers` as a library.
    returns a dict. Replaces `xbmcaddon.Addon().getSetting()` for the CLI
    context. Returns `{}` on missing file; caller exits with code 4 if the
    `alldebridtoken` or `tmdb_api_key` keys are empty.
-2. Interactive prompt helpers:
-   - `prompt_str(label)` — prints `label`, returns stripped input, re-prompts
-     on empty.
-   - `prompt_int(label, min_val=None, max_val=None)` — parses an int, re-prompts
-     on invalid/out-of-range. `min_val`/`max_val` optional bounds.
-   - `prompt_pick(matches, label="Pick [1-N]: ")` — prints a numbered list,
-     returns the chosen match dict, re-prompts on out-of-range / non-integer.
-   - `select_quality(default="720p")` — full-screen curses arrow-key menu.
-     Renders a vertical list `4K / 1080p / 720p / 480p` with the cursor on
-     `default`. Up/Down move the highlight, Enter selects, `q`/Esc cancels
-     (raises `KeyboardInterrupt`). Returns the selected quality string.
-     Falls back to `prompt_pick`-style numbered list if curses is unavailable
-     (e.g. Windows or non-TTY stdin).
-   All helpers raise `KeyboardInterrupt` naturally on Ctrl-C (caller exits 130).
+2. Interactive prompt helpers (all curses-based, arrow-key navigation):
+   - `search_and_pick(title_prompt)` — split-pane: a search input line at the
+     top (type query, Enter to search) and a scrollable results list below
+     (arrow keys to highlight, Enter to select, `q`/Esc to cancel). Used for
+     the show lookup. TMDB matches are fetched on Enter and rendered as
+     `Title (year)  imdb_id`. Returns the chosen match dict.
+   - `arrow_select(options, label, default=0)` — generic vertical arrow-key
+     menu. `options` is a list of `(value, display_text)` tuples. Up/Down
+     move the highlight, Enter selects, `q`/Esc cancels (raises
+     `KeyboardInterrupt`). `default` is the initial highlight index. Used
+     for seasons, episodes, and quality.
+   - `select_quality(default="720p")` — specialization of `arrow_select`
+     with the fixed `4K / 1080p / 720p / 480p` list and the addon's
+     `offline_quality` as the default highlight.
+   - `select_season(seasons)` — `arrow_select` over `seasons` (from
+     `tmdb.get_seasons`), rendered as `Season N (X episodes)`.
+   - `select_episode(episodes)` — `arrow_select` over a list whose first
+     item is `("all", "Whole season")` and remaining items are
+     `(episode_number, "E{N} — {episode name}")` from `tmdb.get_episodes`.
+     Returns the chosen value (`"all"` for whole-season mode, or the
+     episode integer).
+   - All helpers raise `KeyboardInterrupt` on `q`/Esc/Ctrl-C (caller exits 130).
+   - A non-curses fallback (`arrow_select_fallback`, `search_and_pick_fallback`)
+     using numbered lists is provided for non-TTY environments (CI, piped
+     stdin). Selected automatically when `sys.stdin.isatty()` is False or
+     `curses` is unavailable.
 3. `main()` — flag parsing, drives the prompt → quality menu → scrape →
    resolve → download flow, prints terminal progress.
 4. A terminal progress callback that prints `123 / 1500 MB (8%)` on the same
@@ -83,28 +95,32 @@ Fully interactive: you run `cli.py` and answer prompts. No positional args.
 
 ```
 $ cli.py
-Enter show name: breaking bad
-[tmdb] searching...
+  Search: breaking bad|
+                                    
+    Breaking Bad (2008)        tt0903747
+    Breaking Bad: Original Minisodes (2009)
+  > Better Call Saul (2015)
+    
+  (type to search, ↑/↓ move, Enter select, q cancel)
 
-  1. Breaking Bad (2008)        tt0903747
-  2. Breaking Bad: Original Minisodes (2009)
-  3. Better Call Saul (2015)
-Pick [1-3]: 1
+  Seasons:
+    Season 1 (7 episodes)
+  > Season 2 (13 episodes)
+    Season 3 (13 episodes)
 
-Season: 1
-Episode (blank for whole season): 3
+  Episodes:
+  > Whole season
+    E1 — Seven Thirty-Seven
+    E2 — Grilled
+    ...
 
   Select preferred quality:
-
     4K
-    1080p
   > 720p
     480p
 
-  (↑/↓ move, Enter select, q cancel)
-
 [scrape] 6 sources found
-[scrape] best: Breaking.Bad.S01E03.720p.BluRay.mkv (4.1GB, 120 seeders)
+[scrape] best: Breaking.Bad.S02E03.720p.BluRay.mkv (4.1GB, 120 seeders)
 ...
 ```
 
@@ -119,20 +135,19 @@ input flow:
   download and manifest write.
 - `--help` — usage.
 
-### Interactive prompts
+### Interactive prompts (all arrow-key navigation)
 
-1. **Show name** — `Enter show name: `. Free text. Empty input re-prompts.
-2. **TMDB match picker** — top N matches printed as a numbered list
-   (`1. Title (year)  imdb_id`). `Pick [1-N]: `. Invalid number re-prompts.
-   Default N is 5; if fewer matches, shows all.
-3. **Season** — `Season: `. Integer. Invalid input re-prompts.
-4. **Episode** — `Episode (blank for whole season): `. Positive integer or
-   blank. Blank = whole season (TMDB episode count). Zero, negatives, and
-   non-integer input re-prompt.
-5. **Quality selector** — full-screen curses arrow-key menu, always shown.
-   Options top-to-bottom: `4K`, `1080p`, `720p`, `480p`. Default highlight
-   is the `offline_quality` addon setting (typically `720p`). Up/Down move,
-   Enter selects, `q`/Esc cancels (raises `KeyboardInterrupt` → exit 130).
+1. **Show lookup** — split-pane search UI. Type a query on the search line,
+   press Enter to fetch TMDB matches, arrow keys to highlight a result,
+   Enter to select. `q`/Esc cancels.
+2. **Season selector** — arrow-key menu over the show's seasons (fetched via
+   `tmdb.get_seasons`), rendered as `Season N (X episodes)`. No typing.
+3. **Episode selector** — arrow-key menu whose first item is always
+   `Whole season`; remaining items are `E{N} — {episode name}` from
+   `tmdb.get_episodes`. Selecting `Whole season` enters batch mode.
+4. **Quality selector** — arrow-key menu, always shown. Options top-to-
+   bottom: `4K`, `1080p`, `720p`, `480p`. Default highlight is the
+   `offline_quality` addon setting (typically `720p`).
 
 ### Exit codes
 
@@ -168,42 +183,42 @@ Done: /home/bryce/.bald_man/downloads/Breaking.Bad.S01E03.mp4
 1. Parse CLI flags (`--segments`, `--max-size-gb`, `--dry-run`).
    Invalid flag values → exit 5.
 2. `read_kodi_settings()` — exit 4 if `alldebridtoken` or `tmdb_api_key` empty.
-3. Prompt `Enter show name: `. Empty input re-prompts.
-4. `tmdb.search_shows(title)` → list of matches. Exit 2 if zero matches.
-   Print numbered list (`1. Title (year)  imdb_id`). Prompt `Pick [1-N]: `.
-   Invalid number re-prompts. User's pick → `show_id`, `imdb_id`, poster.
-5. Prompt `Season: `. Invalid input re-prompts.
-6. Prompt `Episode (blank for whole season): `. Blank → whole season mode;
-   integer → single-episode mode. Invalid input re-prompts.
-7. `select_quality(default=settings.offline_quality)` — curses arrow-key
+3. `search_and_pick("Search: ")` — user types a show name, presses Enter,
+   arrow-keys through TMDB matches. Exit 2 if TMDB returns zero matches.
+   User's pick → `show_id`, `imdb_id`, poster.
+4. `tmdb.get_seasons(show_id)` → `select_season(seasons)` — arrow-key menu.
+   Returns the chosen `season_number`.
+5. `tmdb.get_episodes(show_id, season)` → `select_episode(episodes)` —
+   arrow-key menu with `Whole season` as the first option. Returns either
+   `"all"` (whole-season mode) or an `episode_number` (single-episode mode).
+6. `select_quality(default=settings.offline_quality)` — curses arrow-key
    menu. Returns the chosen quality string (`4K`, `1080p`, `720p`, or
    `480p`). Cancellation → exit 130.
 
 ### Single episode
 
-8. `scraper_runner.search_all(query=build_query(title, season, episode), content_type="shows")`.
-9. `pick_best_source(sources, quality, max_gb)` — filter by size, sort by
+7. `scraper_runner.search_all(query=build_query(title, season, episode), content_type="shows")`.
+8. `pick_best_source(sources, quality, max_gb)` — filter by size, sort by
    quality match → seeders → size. Take top. Exit 1 if empty.
-10. `alldebrid.resolve(url, api_key, season, episode, progress_callback=...)`.
-11. `download_manager.download_video(direct_url, dest, num_segments=N, progress_callback=...)`.
-12. `cache_artwork(poster_url, art_dir()/fname.poster.jpg)`.
-13. `add_to_manifest({...})` — same entry shape the addon uses:
+9. `alldebrid.resolve(url, api_key, season, episode, progress_callback=...)`.
+10. `download_manager.download_video(direct_url, dest, num_segments=N, progress_callback=...)`.
+11. `cache_artwork(poster_url, art_dir()/fname.poster.jpg)`.
+12. `add_to_manifest({...})` — same entry shape the addon uses:
     `{id, title, show_title, season, episode, file_path, size_bytes,
     date_added, mediatype, plot, poster_path}`.
-14. Print `Done: <path>`.
+13. Print `Done: <path>`.
 
 ### Whole season
 
-8. `tmdb.get_episodes(show_id, season)` → list of `{episode_number, name}`.
-   Episode count = `len(list)`.
-9. Loop episodes 1..N. For each: scrape, pick best (using the quality
-   chosen in step 7 — asked once, applied to every episode), resolve,
+7. Episode count = `len(episodes)` (already fetched in step 5).
+8. Loop episodes 1..N. For each: scrape, pick best (using the quality
+   chosen in step 6 — asked once, applied to every episode), resolve,
    download, manifest.
    - If an episode has zero viable sources → print `[skip] S1E5: no sources`,
      continue (don't abort the whole batch).
    - If the destination file already exists with the expected size → print
      `[skip] S1E3: already downloaded`, continue.
-10. End-of-run summary: `Downloaded 8/10 episodes. Skipped: S1E5, S1E9`.
+9. End-of-run summary: `Downloaded 8/10 episodes. Skipped: S1E5, S1E9`.
 
 ## Error handling
 
@@ -243,16 +258,25 @@ Unit tests in `test_cli.py`, stdlib `unittest` only (same pattern as
 - `build_query("Breaking Bad", 1, 3)` → `"Breaking Bad S01E03"`.
 - `episode_already_downloaded(dest_path, expected_size)` — True when file
   exists with matching size, False otherwise.
-- `prompt_int("Season: ", min_val=1)` — monkeypatch `input()` to return
-  `"1"` → returns `1`; returns `"0"` → re-prompts and `"2"` → returns `2`.
-- `prompt_pick(matches, prompt="Pick [1-N]: ")` — with a 3-item list and
-  `input` returning `"2"` → returns the second match; `"4"` → re-prompts,
-  `"x"` → re-prompts, `"0"` → re-prompts.
-- `select_quality_fallback(default="720p")` — the non-curses fallback path.
-  Monkeypatch `input()` to return `"3"` → returns `"720p"` (3rd in the
-  4K/1080p/720p/480p list); `"0"` and `"5"` re-prompt; `"q"` raises
-  `KeyboardInterrupt`. The curses rendering itself is not unit-tested
-  (visual; covered by manual run).
+- `build_season_options(seasons)` — given TMDB-shaped
+  `[{season_number: 1, episode_count: 7, name: "Season 1"}, ...]` returns
+  `[(1, "Season 1 (7 episodes)"), ...]` for `arrow_select`.
+- `build_episode_options(episodes)` — given TMDB-shaped
+  `[{episode_number: 1, name: "Seven Thirty-Seven"}, ...]` returns
+  `[("all", "Whole season"), (1, "E1 — Seven Thirty-Seven"), ...]`.
+- `build_quality_options(default="720p")` — returns
+  `[("4K", "4K"), ("1080p", "1080p"), ("720p", "720p"), ("480p", "480p")]`
+  with the default's index noted for the initial highlight.
+- `arrow_select_fallback(options, label, input_seq)` — the non-curses path
+  used when stdin is not a TTY or curses is unavailable. Monkeypatch
+  `input()` to yield `"2"` → returns the third option's value; `"0"`,
+  `"99"`, and `"x"` re-prompt; `"q"` raises `KeyboardInterrupt`. The
+  curses rendering itself is not unit-tested (visual; covered by manual run).
+- `search_and_pick_fallback(search_fn, input_seq)` — the non-curses path
+  for show lookup. First `input()` is the search query, second is the
+  pick number. Verifies that `search_fn` is called with the query and
+  the correct match is returned; empty query re-prompts; invalid pick
+  re-prompts.
 
 ### Integration tests (local HTTP server)
 
