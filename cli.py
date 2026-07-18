@@ -104,6 +104,19 @@ def pick_best_source(sources, quality, max_gb):
     return candidates[0]
 
 
+def build_query(title, season, episode):
+    """Build the scraper query string: 'Title S01E03' (zero-padded)."""
+    return "{} S{:02d}E{:02d}".format(title, int(season), int(episode))
+
+
+def episode_already_downloaded(dest_path, expected_size):
+    """True if dest_path exists with exactly expected_size bytes."""
+    try:
+        return os.path.getsize(dest_path) == expected_size
+    except OSError:
+        return False
+
+
 def main():
     """Entry point — implemented in Task 9."""
     pass

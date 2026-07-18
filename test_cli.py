@@ -130,5 +130,38 @@ class PickBestSourceTests(unittest.TestCase):
         self.assertEqual(best['quality'], '720p')
 
 
+class BuildQueryTests(unittest.TestCase):
+    def test_zero_pads_season_and_episode(self):
+        self.assertEqual(cli.build_query("Breaking Bad", 1, 3),
+                         "Breaking Bad S01E03")
+
+    def test_double_digits(self):
+        self.assertEqual(cli.build_query("Show", 10, 12),
+                         "Show S10E12")
+
+
+class EpisodeAlreadyDownloadedTests(unittest.TestCase):
+    def test_true_when_file_exists_with_matching_size(self):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b'x' * 1024)
+            path = f.name
+        try:
+            self.assertTrue(cli.episode_already_downloaded(path, 1024))
+        finally:
+            os.unlink(path)
+
+    def test_false_when_size_mismatches(self):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b'x' * 1024)
+            path = f.name
+        try:
+            self.assertFalse(cli.episode_already_downloaded(path, 2048))
+        finally:
+            os.unlink(path)
+
+    def test_false_when_file_missing(self):
+        self.assertFalse(cli.episode_already_downloaded('/nonexistent.mkv', 1024))
+
+
 if __name__ == '__main__':
     unittest.main()
