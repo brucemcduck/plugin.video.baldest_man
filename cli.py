@@ -126,6 +126,28 @@ def episode_already_downloaded(dest_path, expected_size):
         return False
 
 
+def _cleanup_part_files(dest_path):
+    """Remove .part.N and .concat files for a cancelled/failed download.
+
+    Handles both unsuffixed ('dest.part.0') and source-id-suffixed
+    ('dest.abc12345.part.0') part files, plus the '.concat' temp file
+    from a failed concatenation. The final completed file is preserved.
+    """
+    import glob
+    for pattern in (dest_path + '.part.*', dest_path + '.*.part.*'):
+        for p in glob.glob(pattern):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    concat = dest_path + '.concat'
+    if os.path.exists(concat):
+        try:
+            os.remove(concat)
+        except OSError:
+            pass
+
+
 def build_season_options(seasons):
     """Convert tmdb.get_seasons() result into arrow_select options.
 
@@ -469,11 +491,17 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
             num_segments=num_segments,
             progress_callback=progress_cb,
         )
+    except KeyboardInterrupt:
+        _cleanup_part_files(dest)
+        print('[download] cancelled, partial files removed')
+        raise
     except DownloadError as e:
         print('[fail] download error: {}'.format(e))
+        _cleanup_part_files(dest)
         return False
     if not ok:
         print('[fail] download cancelled or failed')
+        _cleanup_part_files(dest)
         return False
 
     # Cache artwork

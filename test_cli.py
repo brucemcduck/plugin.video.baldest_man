@@ -218,6 +218,59 @@ class SearchWithRetryTests(unittest.TestCase):
             cli.scraper_runner.search_all = orig
 
 
+class CleanupPartFilesTests(unittest.TestCase):
+    def test_removes_unsuffixed_part_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'video.mp4')
+            for i in range(4):
+                with open('{}.part.{}'.format(dest, i), 'wb') as f:
+                    f.write(b'x' * 100)
+            cli._cleanup_part_files(dest)
+            for i in range(4):
+                self.assertFalse(os.path.exists('{}.part.{}'.format(dest, i)))
+
+    def test_removes_source_suffixed_part_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'video.mp4')
+            for i in range(4):
+                with open('{}.abc12345.part.{}'.format(dest, i), 'wb') as f:
+                    f.write(b'x' * 100)
+            cli._cleanup_part_files(dest)
+            for i in range(4):
+                self.assertFalse(os.path.exists('{}.abc12345.part.{}'.format(dest, i)))
+
+    def test_removes_concat_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'video.mp4')
+            with open(dest + '.concat', 'wb') as f:
+                f.write(b'partial')
+            cli._cleanup_part_files(dest)
+            self.assertFalse(os.path.exists(dest + '.concat'))
+
+    def test_preserves_final_completed_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'video.mp4')
+            with open(dest, 'wb') as f:
+                f.write(b'complete')
+            cli._cleanup_part_files(dest)
+            self.assertTrue(os.path.exists(dest))
+
+    def test_preserves_unrelated_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'video.mp4')
+            other = os.path.join(tmp, 'other.mp4')
+            with open(other + '.part.0', 'wb') as f:
+                f.write(b'unrelated')
+            cli._cleanup_part_files(dest)
+            self.assertTrue(os.path.exists(other + '.part.0'))
+
+    def test_no_error_when_nothing_to_clean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = os.path.join(tmp, 'video.mp4')
+            # Should not raise even though no .part files exist
+            cli._cleanup_part_files(dest)
+
+
 class EpisodeAlreadyDownloadedTests(unittest.TestCase):
     def test_true_when_file_exists_with_matching_size(self):
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -531,6 +584,121 @@ class DownloadEpisodeTests(unittest.TestCase):
             cli.scraper_runner.search_all = orig_search_all
             cli.alldebrid.resolve = orig_resolve
             cli.tmdb.get_imdb_id = orig_get_imdb
+            dm.manifest_path = orig_manifest_path
+
+    def test_cancelled_download_cleans_up_part_files(self):
+        """When download_video returns False (cancelled), partial files
+        are removed so the download dir isn't littered with .part.N files."""
+        from resources.lib import download_manager as dm
+
+        show = {'id': 1396, 'title': 'Breaking Bad', 'year': '2008',
+                'poster_url': None}
+        settings = {
+            'alldebridtoken': 'x',
+            'tmdb_api_key': 'x',
+            'tmdb_language': 'en',
+            'offline_quality': '720p',
+            'download_segments': '4',
+            'max_download_size_gb': '2',
+            'magnet_timeout': '120',
+        }
+
+        fake_source = {
+            'show_title': 'Breaking Bad',
+            'url': 'magnet:?fake',
+            'title': 'Breaking.Bad.S01E01.720p',
+            'quality': '720p',
+            'size': '800 MB',
+            'seeders': 10,
+        }
+        orig_search_all = cli.scraper_runner.search_all
+        orig_resolve = cli.alldebrid.resolve
+        orig_download_video = cli.download_manager.download_video
+        orig_manifest_path = dm.manifest_path
+        cli.scraper_runner.search_all = lambda q, content_type='all': [fake_source]
+        cli.alldebrid.resolve = lambda url, api_key, **kw: 'http://example.com/x'
+        dm.manifest_path = os.path.join(self.tmp, 'manifest.json')
+
+        # Pre-create some .part files to simulate a partial download
+        dest_dir = dm.get_download_dir()
+        dest = os.path.join(dest_dir, 'Breaking.Bad.S01E01.mp4')
+        for i in range(4):
+            with open('{}.part.{}'.format(dest, i), 'wb') as f:
+                f.write(b'partial')
+
+        # Patch download_video to return False (cancelled)
+        def fake_download(direct_url, dest_path, **kw):
+            return False
+        cli.download_manager.download_video = fake_download
+
+        try:
+            result = cli.download_episode(show, 1, 1, '720p', settings)
+            self.assertFalse(result)
+            # All .part files should be gone
+            for i in range(4):
+                self.assertFalse(
+                    os.path.exists('{}.part.{}'.format(dest, i)),
+                    'part file {} was not cleaned up'.format(i))
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
+            cli.download_manager.download_video = orig_download_video
+            dm.manifest_path = orig_manifest_path
+
+    def test_keyboard_interrupt_during_download_cleans_up_part_files(self):
+        """When user hits Ctrl-C during download_video, partial files
+        are removed before KeyboardInterrupt propagates."""
+        from resources.lib import download_manager as dm
+
+        show = {'id': 1396, 'title': 'Breaking Bad', 'year': '2008',
+                'poster_url': None}
+        settings = {
+            'alldebridtoken': 'x',
+            'tmdb_api_key': 'x',
+            'tmdb_language': 'en',
+            'offline_quality': '720p',
+            'download_segments': '4',
+            'max_download_size_gb': '2',
+            'magnet_timeout': '120',
+        }
+
+        fake_source = {
+            'show_title': 'Breaking Bad',
+            'url': 'magnet:?fake',
+            'title': 'Breaking.Bad.S01E01.720p',
+            'quality': '720p',
+            'size': '800 MB',
+            'seeders': 10,
+        }
+        orig_search_all = cli.scraper_runner.search_all
+        orig_resolve = cli.alldebrid.resolve
+        orig_download_video = cli.download_manager.download_video
+        orig_manifest_path = dm.manifest_path
+        cli.scraper_runner.search_all = lambda q, content_type='all': [fake_source]
+        cli.alldebrid.resolve = lambda url, api_key, **kw: 'http://example.com/x'
+        dm.manifest_path = os.path.join(self.tmp, 'manifest.json')
+
+        dest_dir = dm.get_download_dir()
+        dest = os.path.join(dest_dir, 'Breaking.Bad.S01E01.mp4')
+        for i in range(4):
+            with open('{}.part.{}'.format(dest, i), 'wb') as f:
+                f.write(b'partial')
+
+        def raise_kbi(*a, **kw):
+            raise KeyboardInterrupt
+        cli.download_manager.download_video = raise_kbi
+
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                cli.download_episode(show, 1, 1, '720p', settings)
+            for i in range(4):
+                self.assertFalse(
+                    os.path.exists('{}.part.{}'.format(dest, i)),
+                    'part file {} was not cleaned up on Ctrl-C'.format(i))
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
+            cli.download_manager.download_video = orig_download_video
             dm.manifest_path = orig_manifest_path
 
 
