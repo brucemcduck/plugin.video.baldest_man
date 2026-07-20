@@ -118,6 +118,18 @@ def build_query(title, season, episode):
     return "{} S{:02d}E{:02d}".format(clean_title, int(season), int(episode))
 
 
+def build_movie_query(title, year):
+    """Build the scraper query for a movie: 'Title Year' (or just Title).
+
+    Strips apostrophes from the title — some scraper APIs (e.g. PirateBay)
+    return zero results for queries containing apostrophes.
+    """
+    clean_title = title.replace("'", '').replace('\u2019', '')
+    if year:
+        return "{} {}".format(clean_title, year)
+    return clean_title
+
+
 def episode_already_downloaded(dest_path, expected_size):
     """True if dest_path exists with exactly expected_size bytes."""
     try:

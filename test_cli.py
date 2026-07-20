@@ -158,6 +158,28 @@ class BuildQueryTests(unittest.TestCase):
                          "Its Always Sunny S01E01")
 
 
+class BuildMovieQueryTests(unittest.TestCase):
+    def test_includes_year_when_present(self):
+        self.assertEqual(cli.build_movie_query("Inception", "2010"),
+                         "Inception 2010")
+
+    def test_omits_year_when_empty(self):
+        self.assertEqual(cli.build_movie_query("Inception", ""),
+                         "Inception")
+
+    def test_omits_year_when_none(self):
+        self.assertEqual(cli.build_movie_query("Inception", None),
+                         "Inception")
+
+    def test_strips_apostrophes(self):
+        self.assertEqual(cli.build_movie_query("The Boss's Movie", "2020"),
+                         "The Bosss Movie 2020")
+
+    def test_strips_smart_quotes(self):
+        self.assertEqual(cli.build_movie_query("It\u2019s a Movie", "2021"),
+                         "Its a Movie 2021")
+
+
 class SearchWithRetryTests(unittest.TestCase):
     def test_returns_first_results_without_retry(self):
         calls = []
