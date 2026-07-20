@@ -426,6 +426,27 @@ class SearchAndPickFallbackTests(unittest.TestCase):
             cli.search_and_pick_fallback(fake_search, input_fn=lambda _: next(inputs))
 
 
+class SearchAndPickLabelTests(unittest.TestCase):
+    def test_fallback_uses_label_media_for_display(self):
+        matches = [
+            {'id': 1, 'title': 'Breaking Bad', 'year': '2008', 'type': 'show'},
+            {'id': 2, 'title': 'Inception', 'year': '2010', 'type': 'movie'},
+        ]
+        def fake_search(query):
+            return matches
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        inputs = iter(['test', '1'])
+        with redirect_stdout(buf):
+            result = cli.search_and_pick_fallback(
+                fake_search, input_fn=lambda _: next(inputs))
+        output = buf.getvalue()
+        self.assertIn('[Show]', output)
+        self.assertIn('[Movie]', output)
+        self.assertEqual(result['id'], 1)
+
+
 class DownloadEpisodeTests(unittest.TestCase):
     """Integration test for download_episode with mocked TMDB/AllDebrid
     and a local throttled Range-supporting HTTP server (same pattern as

@@ -265,7 +265,7 @@ def search_and_pick_fallback(search_fn, input_fn=input):
             return None
         print('  TMDB matches:')
         for i, m in enumerate(matches, start=1):
-            print('  {}. {} ({})'.format(i, m.get('title', '?'), m.get('year', '')))
+            print('  {}. {}'.format(i, _label_media(m)))
         choice = input_fn('Pick [1-{}]: '.format(len(matches))).strip()
         if choice.lower() == 'q':
             raise KeyboardInterrupt
@@ -375,9 +375,8 @@ def search_and_pick(search_fn):
         matches = search_fn(query)
         if not matches:
             return None
-        opts = [(m, '{} ({})'.format(m.get('title', '?'), m.get('year', '')))
-                for m in matches]
-        return arrow_select(opts, 'Pick a show:')
+        opts = [(m, _label_media(m)) for m in matches]
+        return arrow_select(opts, 'Pick a title:')
 
 
 def select_quality(default='720p'):
