@@ -921,7 +921,8 @@ class DownloadMovieTests(unittest.TestCase):
         try:
             result = cli.download_movie(movie, '720p', settings)
             self.assertTrue(result)
-            manifest = json.loads(open(self.manifest_path).read())
+            with open(self.manifest_path) as f:
+                manifest = json.load(f)
             self.assertEqual(len(manifest), 1)
             entry = manifest[0]
             self.assertEqual(entry['mediatype'], 'movie')

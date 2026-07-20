@@ -282,7 +282,7 @@ def search_and_pick_fallback(search_fn, input_fn=input):
         if query.lower() == 'q':
             raise KeyboardInterrupt
         if not query:
-            print('  enter a show name to search')
+            print('  enter a title to search')
             continue
         matches = search_fn(query)
         if not matches:
@@ -394,7 +394,7 @@ def search_and_pick(search_fn):
         if query.lower() == 'q':
             raise KeyboardInterrupt
         if not query:
-            print('  enter a show name to search')
+            print('  enter a title to search')
             continue
         matches = search_fn(query)
         if not matches:
