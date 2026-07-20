@@ -780,20 +780,28 @@ def main(argv=None):
         settings['magnet_timeout'] = '0'
 
     try:
-        # 1. Show lookup (interactive)
+        # 1. Title lookup (interactive) — searches both shows and movies
         def search_fn(query):
-            return tmdb.search_shows(
-                query,
-                settings.get('tmdb_api_key', ''),
-                settings.get('tmdb_language', 'en'),
-            )
-        show = search_and_pick(search_fn)
-        if show is None:
+            return _search_all_types(query, settings)
+        picked = search_and_pick(search_fn)
+        if picked is None:
             print('[tmdb] no matches')
             return 2
-        print('[tmdb] {} -> show_id={}'.format(
-            show.get('title', '?'), show.get('id')))
+        print('[tmdb] {} -> id={} type={}'.format(
+            picked.get('title', '?'), picked.get('id'), picked.get('type')))
 
+        if picked.get('type') == 'movie':
+            # Movie path: no season/episode picker
+            quality = select_quality(default=settings.get('offline_quality', '720p'))
+            print('[quality] {}'.format(quality))
+            ok = download_movie(picked, quality, settings,
+                                dry_run=args.dry_run)
+            if not ok:
+                return 1
+            return 0
+
+        # Show path: existing season/episode flow
+        show = picked
         # 2. Season picker
         seasons = tmdb.get_seasons(
             show['id'], settings.get('tmdb_api_key', ''),
