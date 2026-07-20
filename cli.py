@@ -130,6 +130,17 @@ def build_movie_query(title, year):
     return clean_title
 
 
+def _label_media(item):
+    title = item.get('title', '?')
+    year = item.get('year', '')
+    mtype = item.get('type', 'show')
+    label = title
+    if year:
+        label += ' ({})'.format(year)
+    label += ' [{}]'.format(mtype.capitalize())
+    return label
+
+
 def episode_already_downloaded(dest_path, expected_size):
     """True if dest_path exists with exactly expected_size bytes."""
     try:

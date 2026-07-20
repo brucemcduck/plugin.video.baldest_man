@@ -807,6 +807,28 @@ class DownloadSeasonTests(unittest.TestCase):
             dm.manifest_path = orig_manifest_path
 
 
+class LabelMediaTests(unittest.TestCase):
+    def test_show_with_year(self):
+        item = {'title': 'Breaking Bad', 'year': '2008', 'type': 'show'}
+        self.assertEqual(cli._label_media(item), 'Breaking Bad (2008) [Show]')
+
+    def test_movie_with_year(self):
+        item = {'title': 'Inception', 'year': '2010', 'type': 'movie'}
+        self.assertEqual(cli._label_media(item), 'Inception (2010) [Movie]')
+
+    def test_show_without_year(self):
+        item = {'title': 'Some Show', 'year': '', 'type': 'show'}
+        self.assertEqual(cli._label_media(item), 'Some Show [Show]')
+
+    def test_movie_without_year(self):
+        item = {'title': 'Some Movie', 'year': None, 'type': 'movie'}
+        self.assertEqual(cli._label_media(item), 'Some Movie [Movie]')
+
+    def test_missing_type_defaults_to_show(self):
+        item = {'title': 'Untitled', 'year': '2020'}
+        self.assertEqual(cli._label_media(item), 'Untitled (2020) [Show]')
+
+
 class MainArgsTests(unittest.TestCase):
     """Test argument parsing in isolation. The interactive flow is mocked."""
 
