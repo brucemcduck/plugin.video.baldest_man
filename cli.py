@@ -576,6 +576,101 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
     return True
 
 
+def download_movie(movie, quality, settings, dry_run=False):
+    """Run the scrape -> resolve -> download -> manifest flow for one movie.
+
+    movie: TMDB movie dict with at least {id, title, year, poster_url, type}.
+    settings: dict from read_kodi_settings().
+    Returns True on success, False on no sources or download failure.
+    Raises AllDebridError if the magnet resolution fails (caller decides
+    whether to abort or skip-and-continue).
+    """
+    title = movie.get('title', '')
+    poster_url = movie.get('poster_url')
+    year = movie.get('year', '')
+
+    query = build_movie_query(title, year)
+    print('[scrape] searching for {}'.format(query))
+    sources = _search_with_retry(query, content_type='movies')
+    if not sources:
+        print('[scrape] no sources found')
+        return False
+    print('[scrape] {} sources found'.format(len(sources)))
+
+    max_gb = int(settings.get('max_download_size_gb', '2') or '2')
+    best = pick_best_source(sources, quality=quality, max_gb=max_gb)
+    if not best:
+        print('[scrape] no sources passed quality/size filters')
+        return False
+    print('[scrape] best: {} ({}, {} seeders)'.format(
+        best.get('title', '?'), best.get('size', '?'), best.get('seeders', '?')))
+
+    if dry_run:
+        print('[dry-run] would download: {}'.format(best.get('url', '?')))
+        return True
+
+    api_key = settings.get('alldebridtoken', '')
+    num_segments = int(settings.get('download_segments', '4') or '4')
+    magnet_timeout = int(settings.get('magnet_timeout', '120') or '120')
+
+    if magnet_timeout:
+        print('[alldebrid] resolving... (timeout={}s)'.format(magnet_timeout))
+    else:
+        print('[alldebrid] resolving... (no timeout)')
+    direct_url = alldebrid.resolve(
+        best['url'], api_key,
+        timeout=magnet_timeout,
+        progress_callback=_alldebrid_progress,
+    )
+    print('[alldebrid] ready')
+
+    dest_dir = download_manager.get_download_dir()
+    fname = download_manager.safe_filename(title)
+    dest = os.path.join(dest_dir, fname)
+
+    print('[download] -> {}'.format(dest))
+    progress_cb = make_progress_callback()
+    try:
+        ok = download_manager.download_video(
+            direct_url, dest,
+            num_segments=num_segments,
+            progress_callback=progress_cb,
+        )
+    except KeyboardInterrupt:
+        _cleanup_part_files(dest)
+        print('[download] cancelled, partial files removed')
+        raise
+    except DownloadError as e:
+        print('[fail] download error: {}'.format(e))
+        _cleanup_part_files(dest)
+        return False
+    if not ok:
+        print('[fail] download cancelled or failed')
+        _cleanup_part_files(dest)
+        return False
+
+    poster_local = None
+    if poster_url:
+        poster_local = download_manager.cache_artwork(
+            poster_url, os.path.join(download_manager.art_dir(),
+                                     fname + '.poster.jpg'))
+
+    entry = {
+        'id': fname,
+        'title': title,
+        'show_title': title,
+        'file_path': dest,
+        'size_bytes': os.path.getsize(dest),
+        'date_added': int(__import__('time').time()),
+        'mediatype': 'movie',
+        'plot': '',
+        'poster_path': poster_local,
+    }
+    download_manager.add_to_manifest(entry)
+    print('Done: {}'.format(dest))
+    return True
+
+
 def _alldebrid_progress(state, pct, eta):
     """Print AllDebrid magnet-resolution progress to stderr."""
     print('[alldebrid] {}... {}%'.format(state, pct), file=sys.stderr)

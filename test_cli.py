@@ -4,6 +4,7 @@
 Run outside Kodi:
     python3 -m unittest test_cli
 """
+import json
 import os
 import sys
 import tempfile
@@ -790,6 +791,227 @@ class DownloadEpisodeTests(unittest.TestCase):
             cli.scraper_runner.search_all = orig_search_all
             cli.alldebrid.resolve = orig_resolve
             cli.download_manager.download_video = orig_download_video
+            dm.manifest_path = orig_manifest_path
+
+
+class DownloadMovieTests(unittest.TestCase):
+    """Integration test for download_movie with mocked scrape/resolve
+    and a local throttled Range-supporting HTTP server. Same setUp/tearDown
+    pattern as DownloadEpisodeTests."""
+    def setUp(self):
+        # Reuse the same HTTP server setup as DownloadEpisodeTests.
+        # Inline copy because DownloadEpisodeTests.setUp isn't inherited.
+        import http.server
+        import socketserver
+        import threading
+        import time
+        self.tmp = tempfile.mkdtemp()
+        self.payload = b'X' * (4 * 1024 * 1024)
+        src = os.path.join(self.tmp, 'source.bin')
+        with open(src, 'wb') as f:
+            f.write(self.payload)
+
+        outer = self
+        class RangeThrottledHandler(http.server.BaseHTTPRequestHandler):
+            CHUNK_DELAY_S = 0.005
+            def do_GET(self):
+                with open(src, 'rb') as f:
+                    fs = os.fstat(f.fileno())
+                    total = fs.st_size
+                    range_header = self.headers.get('Range')
+                    if range_header and range_header.startswith('bytes='):
+                        spec = range_header[6:]
+                        parts = spec.split('-', 1)
+                        start = int(parts[0]) if parts[0] else 0
+                        end = int(parts[1]) if parts[1] else total - 1
+                        end = min(end, total - 1)
+                        length = end - start + 1
+                        self.send_response(206)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Length', str(length))
+                        self.send_header('Content-Range',
+                                         'bytes {}-{}/{}'.format(start, end, total))
+                        self.send_header('Accept-Ranges', 'bytes')
+                        self.end_headers()
+                        f.seek(start)
+                        remaining = length
+                        while remaining > 0:
+                            buf = f.read(min(65536, remaining))
+                            if not buf:
+                                break
+                            self.wfile.write(buf)
+                            self.wfile.flush()
+                            time.sleep(self.CHUNK_DELAY_S)
+                            remaining -= len(buf)
+                    else:
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/octet-stream')
+                        self.send_header('Content-Length', str(total))
+                        self.send_header('Accept-Ranges', 'bytes')
+                        self.end_headers()
+                        while True:
+                            buf = f.read(65536)
+                            if not buf:
+                                break
+                            self.wfile.write(buf)
+                            self.wfile.flush()
+                            time.sleep(self.CHUNK_DELAY_S)
+            def log_message(self, *a, **kw):
+                pass
+
+        socketserver.TCPServer.allow_reuse_address = True
+        self.httpd = socketserver.ThreadingTCPServer(
+            ('127.0.0.1', 0), RangeThrottledHandler)
+        self.port = self.httpd.server_address[1]
+        self.server_thread = threading.Thread(target=self.httpd.serve_forever,
+                                              daemon=True)
+        self.server_thread.start()
+        self.file_url = 'http://127.0.0.1:{}/source.bin'.format(self.port)
+        self._orig_cwd = os.getcwd()
+        os.chdir(self.tmp)
+        from resources.lib import download_manager as dm
+        self._orig_min_parallel = dm.MIN_PARALLEL_SIZE
+        dm.MIN_PARALLEL_SIZE = 0
+        self._orig_get_download_dir = dm.get_download_dir
+        dm.get_download_dir = lambda: self.tmp
+        self._orig_art_dir = dm.art_dir
+        dm.art_dir = lambda: self.tmp
+
+    def tearDown(self):
+        import shutil
+        os.chdir(self._orig_cwd)
+        from resources.lib import download_manager as dm
+        dm.MIN_PARALLEL_SIZE = self._orig_min_parallel
+        dm.get_download_dir = self._orig_get_download_dir
+        dm.art_dir = self._orig_art_dir
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_downloads_movie_and_adds_to_manifest(self):
+        from resources.lib import download_manager as dm
+        movie = {'id': 27205, 'title': 'Inception', 'year': '2010',
+                 'poster_url': None, 'type': 'movie'}
+        settings = {
+            'alldebridtoken': 'x',
+            'tmdb_api_key': 'x',
+            'tmdb_language': 'en',
+            'offline_quality': '720p',
+            'download_segments': '4',
+            'max_download_size_gb': '2',
+            'magnet_timeout': '120',
+        }
+        fake_source = {
+            'show_title': 'Inception',
+            'url': 'magnet:?fake',
+            'title': 'Inception.2010.1080p',
+            'quality': '1080p',
+            'size': '800 MB',
+            'seeders': 10,
+        }
+        orig_search_all = cli.scraper_runner.search_all
+        orig_resolve = cli.alldebrid.resolve
+        orig_manifest_path = dm.manifest_path
+        cli.scraper_runner.search_all = lambda q, content_type='all': [fake_source]
+        cli.alldebrid.resolve = lambda url, api_key, **kw: self.file_url
+        # add_to_manifest calls manifest_path() as a function, so we must
+        # patch with a callable (matching DownloadEpisodeTests pattern).
+        self.manifest_path = os.path.join(self.tmp, 'manifest.json')
+        dm.manifest_path = lambda: self.manifest_path
+        try:
+            result = cli.download_movie(movie, '720p', settings)
+            self.assertTrue(result)
+            manifest = json.loads(open(self.manifest_path).read())
+            self.assertEqual(len(manifest), 1)
+            entry = manifest[0]
+            self.assertEqual(entry['mediatype'], 'movie')
+            self.assertEqual(entry['title'], 'Inception')
+            self.assertNotIn('season', entry)
+            self.assertNotIn('episode', entry)
+            self.assertTrue(os.path.exists(entry['file_path']))
+            self.assertEqual(os.path.getsize(entry['file_path']), len(self.payload))
+            # filename has no SxxExx
+            self.assertNotIn('S0', entry['id'])
+            self.assertNotIn('E0', entry['id'])
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
+            dm.manifest_path = orig_manifest_path
+
+    def test_no_sources_returns_false(self):
+        movie = {'id': 1, 'title': 'Unknown', 'year': '2020', 'type': 'movie'}
+        settings = {
+            'alldebridtoken': 'x', 'tmdb_api_key': 'x', 'tmdb_language': 'en',
+            'offline_quality': '720p', 'download_segments': '4',
+            'max_download_size_gb': '2', 'magnet_timeout': '120',
+        }
+        orig_search_all = cli.scraper_runner.search_all
+        cli.scraper_runner.search_all = lambda q, content_type='all': []
+        try:
+            result = cli.download_movie(movie, '720p', settings)
+            self.assertFalse(result)
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+
+    def test_dry_run_does_not_download(self):
+        from resources.lib import download_manager as dm
+        movie = {'id': 27205, 'title': 'Inception', 'year': '2010', 'type': 'movie'}
+        settings = {
+            'alldebridtoken': 'x', 'tmdb_api_key': 'x', 'tmdb_language': 'en',
+            'offline_quality': '720p', 'download_segments': '4',
+            'max_download_size_gb': '2', 'magnet_timeout': '120',
+        }
+        fake_source = {
+            'show_title': 'Inception', 'url': 'magnet:?fake',
+            'title': 'Inception.2010.1080p', 'quality': '1080p',
+            'size': '800 MB', 'seeders': 10,
+        }
+        orig_search_all = cli.scraper_runner.search_all
+        orig_resolve = cli.alldebrid.resolve
+        orig_manifest_path = dm.manifest_path
+        cli.scraper_runner.search_all = lambda q, content_type='all': [fake_source]
+        cli.alldebrid.resolve = lambda url, api_key, **kw: self.file_url
+        self.manifest_path = os.path.join(self.tmp, 'manifest.json')
+        dm.manifest_path = lambda: self.manifest_path
+        try:
+            result = cli.download_movie(movie, '720p', settings, dry_run=True)
+            self.assertTrue(result)
+            self.assertFalse(os.path.exists(self.manifest_path))
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
+            dm.manifest_path = orig_manifest_path
+
+    def test_uses_movies_content_type_for_scrape(self):
+        movie = {'id': 27205, 'title': 'Inception', 'year': '2010', 'type': 'movie'}
+        settings = {
+            'alldebridtoken': 'x', 'tmdb_api_key': 'x', 'tmdb_language': 'en',
+            'offline_quality': '720p', 'download_segments': '4',
+            'max_download_size_gb': '2', 'magnet_timeout': '120',
+        }
+        fake_source = {
+            'show_title': 'Inception', 'url': 'magnet:?fake',
+            'title': 'Inception.2010.1080p', 'quality': '1080p',
+            'size': '800 MB', 'seeders': 10,
+        }
+        captured = {}
+        def fake_search_all(query, content_type='all'):
+            captured['content_type'] = content_type
+            return [fake_source]
+        orig_search_all = cli.scraper_runner.search_all
+        orig_resolve = cli.alldebrid.resolve
+        from resources.lib import download_manager as dm
+        orig_manifest_path = dm.manifest_path
+        cli.scraper_runner.search_all = fake_search_all
+        cli.alldebrid.resolve = lambda url, api_key, **kw: self.file_url
+        self.manifest_path = os.path.join(self.tmp, 'manifest.json')
+        dm.manifest_path = lambda: self.manifest_path
+        try:
+            cli.download_movie(movie, '720p', settings, dry_run=True)
+            self.assertEqual(captured.get('content_type'), 'movies')
+        finally:
+            cli.scraper_runner.search_all = orig_search_all
+            cli.alldebrid.resolve = orig_resolve
             dm.manifest_path = orig_manifest_path
 
 
