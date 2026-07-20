@@ -141,6 +141,30 @@ def _label_media(item):
     return label
 
 
+def _search_all_types(query, settings):
+    """Search TMDB for both shows and movies in parallel, return merged list.
+
+    Each result is tagged with 'type': 'show' or 'movie' so the caller
+    can dispatch on it. Uses ThreadPoolExecutor so both API calls run
+    concurrently.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    api_key = settings.get('tmdb_api_key', '')
+    language = settings.get('tmdb_language', 'en')
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        shows_future = pool.submit(tmdb.search_shows, query, api_key, language)
+        movies_future = pool.submit(tmdb.search_movies, query, api_key, language)
+        shows = shows_future.result()
+        movies = movies_future.result()
+
+    for s in shows:
+        s.setdefault('type', 'show')
+    for m in movies:
+        m.setdefault('type', 'movie')
+    return shows + movies
+
+
 def episode_already_downloaded(dest_path, expected_size):
     """True if dest_path exists with exactly expected_size bytes."""
     try:

@@ -447,6 +447,54 @@ class SearchAndPickLabelTests(unittest.TestCase):
         self.assertEqual(result['id'], 1)
 
 
+class SearchAllTypesTests(unittest.TestCase):
+    def test_merges_shows_and_movies_with_type_tag(self):
+        shows = [{'id': 1, 'title': 'Breaking Bad', 'year': '2008'}]
+        movies = [{'id': 2, 'title': 'Inception', 'year': '2010'}]
+        orig_shows = cli.tmdb.search_shows
+        orig_movies = cli.tmdb.search_movies
+        cli.tmdb.search_shows = lambda q, k, l: shows
+        cli.tmdb.search_movies = lambda q, k, l: movies
+        try:
+            results = cli._search_all_types('test', {'tmdb_api_key': 'x'})
+        finally:
+            cli.tmdb.search_shows = orig_shows
+            cli.tmdb.search_movies = orig_movies
+        self.assertEqual(len(results), 2)
+        types = {r.get('type') for r in results}
+        self.assertEqual(types, {'show', 'movie'})
+        show_item = [r for r in results if r['type'] == 'show'][0]
+        self.assertEqual(show_item['title'], 'Breaking Bad')
+        movie_item = [r for r in results if r['type'] == 'movie'][0]
+        self.assertEqual(movie_item['title'], 'Inception')
+
+    def test_empty_results_when_both_empty(self):
+        orig_shows = cli.tmdb.search_shows
+        orig_movies = cli.tmdb.search_movies
+        cli.tmdb.search_shows = lambda q, k, l: []
+        cli.tmdb.search_movies = lambda q, k, l: []
+        try:
+            results = cli._search_all_types('test', {'tmdb_api_key': 'x'})
+        finally:
+            cli.tmdb.search_shows = orig_shows
+            cli.tmdb.search_movies = orig_movies
+        self.assertEqual(results, [])
+
+    def test_calls_both_apis_with_same_query(self):
+        calls = {'shows': [], 'movies': []}
+        orig_shows = cli.tmdb.search_shows
+        orig_movies = cli.tmdb.search_movies
+        cli.tmdb.search_shows = lambda q, k, l: calls['shows'].append(q) or []
+        cli.tmdb.search_movies = lambda q, k, l: calls['movies'].append(q) or []
+        try:
+            cli._search_all_types('inception', {'tmdb_api_key': 'x', 'tmdb_language': 'en'})
+        finally:
+            cli.tmdb.search_shows = orig_shows
+            cli.tmdb.search_movies = orig_movies
+        self.assertEqual(calls['shows'], ['inception'])
+        self.assertEqual(calls['movies'], ['inception'])
+
+
 class DownloadEpisodeTests(unittest.TestCase):
     """Integration test for download_episode with mocked TMDB/AllDebrid
     and a local throttled Range-supporting HTTP server (same pattern as
