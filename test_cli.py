@@ -141,6 +141,62 @@ class PickBestSourceTests(unittest.TestCase):
         self.assertEqual(best['quality'], '720p')
 
 
+class FilterByTitleTests(unittest.TestCase):
+    def _src(self, show_title):
+        return {'show_title': show_title, 'url': 'magnet:fake',
+                'title': show_title, 'quality': '720p', 'size': '1 GB',
+                'seeders': 10}
+
+    def test_drops_source_with_extra_words(self):
+        """'Walking Dead Beyond' dropped when TMDB title is 'The Walking Dead'."""
+        sources = [self._src('Walking Dead Beyond'), self._src('Walking Dead')]
+        result = cli._filter_by_title(sources, 'The Walking Dead')
+        titles = [s['show_title'] for s in result]
+        self.assertIn('Walking Dead', titles)
+        self.assertNotIn('Walking Dead Beyond', titles)
+
+    def test_keeps_exact_match(self):
+        """'Breaking Bad' kept when TMDB title is 'Breaking Bad'."""
+        sources = [self._src('Breaking Bad')]
+        result = cli._filter_by_title(sources, 'Breaking Bad')
+        self.assertEqual(len(result), 1)
+
+    def test_keeps_shorter_source_for_long_title(self):
+        """'Its Always Sunny' kept when TMDB title is 'It's Always Sunny in Philadelphia'."""
+        sources = [self._src('Its Always Sunny')]
+        result = cli._filter_by_title(sources, "It's Always Sunny in Philadelphia")
+        self.assertEqual(len(result), 1)
+
+    def test_drops_different_show_with_overlap(self):
+        """'Fear the Walking Dead' dropped when TMDB title is 'The Walking Dead'."""
+        sources = [self._src('Fear the Walking Dead'), self._src('The Walking Dead')]
+        result = cli._filter_by_title(sources, 'The Walking Dead')
+        titles = [s['show_title'] for s in result]
+        self.assertIn('The Walking Dead', titles)
+        self.assertNotIn('Fear the Walking Dead', titles)
+
+    def test_falls_back_to_unfiltered_when_all_dropped(self):
+        """If filter drops everything, return original list (safety net)."""
+        sources = [self._src('Completely Different Show')]
+        result = cli._filter_by_title(sources, 'The Walking Dead')
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['show_title'], 'Completely Different Show')
+
+    def test_empty_sources_returns_empty(self):
+        self.assertEqual(cli._filter_by_title([], 'The Walking Dead'), [])
+
+    def test_strips_episode_code_from_source_title(self):
+        """Source show_title with S01E03 still matches (episode code stripped)."""
+        sources = [self._src('Walking Dead S01E03')]
+        result = cli._filter_by_title(sources, 'The Walking Dead')
+        self.assertEqual(len(result), 1)
+
+    def test_case_insensitive(self):
+        sources = [self._src('walking dead')]
+        result = cli._filter_by_title(sources, 'The Walking Dead')
+        self.assertEqual(len(result), 1)
+
+
 class BuildQueryTests(unittest.TestCase):
     def test_zero_pads_season_and_episode(self):
         self.assertEqual(cli.build_query("Breaking Bad", 1, 3),

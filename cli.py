@@ -474,6 +474,47 @@ def _search_with_retry(query, content_type='shows'):
     return []
 
 
+def _filter_by_title(sources, tmdb_title):
+    """Drop sources whose show_title has meaningful words not in tmdb_title.
+
+    Normalizes both titles (lowercase, strip punctuation/apostrophes, remove
+    stop words and short tokens), then checks if every source word is in the
+    TMDB title's word set. Sources with extra words (e.g. 'Walking Dead
+    Beyond' when searching for 'The Walking Dead') are dropped.
+
+    Safety net: if filtering drops ALL sources, returns the original list
+    unchanged — better to try wrong-show sources than to give up.
+    """
+    import re
+    if not sources or not tmdb_title:
+        return sources
+
+    stop_words = {'the', 'a', 'an', 'in', 'of', 'and', 'is', 'it', 's',
+                  'to', 'for', 'on', 'at', 'by', 'with', 'its'}
+
+    def normalize(title):
+        t = re.sub(r"[^\w\s']", ' ', title.lower()).replace("'", ' ')
+        t = re.sub(r'\bs\d+e\d+\b', '', t)
+        return {w for w in t.split() if w not in stop_words and len(w) > 1}
+
+    tmdb_words = normalize(tmdb_title)
+    if not tmdb_words:
+        return sources
+
+    filtered = []
+    for s in sources:
+        src_words = normalize(s.get('show_title', ''))
+        if not src_words:
+            filtered.append(s)
+            continue
+        if src_words.issubset(tmdb_words):
+            filtered.append(s)
+
+    if not filtered:
+        return sources
+    return filtered
+
+
 def download_episode(show, season, episode, quality, settings, dry_run=False):
     """Run the scrape -> resolve -> download -> manifest flow for one episode.
 
@@ -494,6 +535,8 @@ def download_episode(show, season, episode, quality, settings, dry_run=False):
         print('[scrape] no sources found')
         return False
     print('[scrape] {} sources found'.format(len(sources)))
+    sources = _filter_by_title(sources, title)
+    print('[scrape] {} sources after title filter'.format(len(sources)))
 
     max_gb = int(settings.get('max_download_size_gb', '2') or '2')
     best = pick_best_source(sources, quality=quality, max_gb=max_gb)
@@ -596,6 +639,8 @@ def download_movie(movie, quality, settings, dry_run=False):
         print('[scrape] no sources found')
         return False
     print('[scrape] {} sources found'.format(len(sources)))
+    sources = _filter_by_title(sources, title)
+    print('[scrape] {} sources after title filter'.format(len(sources)))
 
     max_gb = int(settings.get('max_download_size_gb', '2') or '2')
     best = pick_best_source(sources, quality=quality, max_gb=max_gb)
