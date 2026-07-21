@@ -10,6 +10,7 @@ VIDEO_EXTENSIONS = (
 )
 
 API = "https://api.alldebrid.com/v4"
+STALL_TIMEOUT = 10  # seconds without download progress before declaring magnet dead
 
 
 class AllDebridError(Exception):
@@ -75,6 +76,8 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None,
         start_time = time.time()
         last_status = ""
         poll_count = 0
+        last_downloaded = None
+        last_progress_time = None
 
         while deadline is None or time.time() < deadline:
             if cancel_check and cancel_check():
@@ -117,6 +120,20 @@ def resolve(url, api_key, timeout=120, poll_interval=1, cancel_check=None,
             if magnet_status != last_status:
                 _log("magnet[{}] status={} code={} elapsed={}s".format(magnet_id, magnet_status, status_code, elapsed))
                 last_status = magnet_status
+
+            # Stall detection: track download progress during Downloading status
+            if status_code == 1 or magnet_status == "Downloading":
+                current_downloaded = magnet_info.get("downloaded") if isinstance(magnet_info, dict) else None
+                if current_downloaded is not None:
+                    if last_downloaded is None or current_downloaded > last_downloaded:
+                        last_downloaded = current_downloaded
+                        last_progress_time = time.time()
+                    elif last_progress_time is not None and time.time() - last_progress_time >= STALL_TIMEOUT:
+                        raise AllDebridError(
+                            "Magnet stalled — no download progress in {}s".format(STALL_TIMEOUT))
+            else:
+                last_downloaded = None
+                last_progress_time = None
 
             if magnet_status in ("Ready", "4") or status_code == 4:
                 _fire_progress(progress_callback, "ready", timeout, 0)
