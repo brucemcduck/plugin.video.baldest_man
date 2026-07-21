@@ -99,7 +99,10 @@ def pick_best_source(sources, quality, max_gb):
 
     def sort_key(r):
         q_rank = _rank_quality(r.get('quality', ''))
-        quality_distance = abs(q_rank - want_rank)
+        if q_rank == 0:
+            quality_distance = 0
+        else:
+            quality_distance = abs(q_rank - want_rank)
         seeders = r.get('seeders') or 0
         size_bytes = _parse_size_bytes(r.get('size', '')) or 0
         return (quality_distance, -q_rank, -seeders, -size_bytes)

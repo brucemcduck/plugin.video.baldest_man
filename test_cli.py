@@ -140,6 +140,39 @@ class PickBestSourceTests(unittest.TestCase):
         best = cli.pick_best_source(sources, quality='720p', max_gb=10)
         self.assertEqual(best['quality'], '720p')
 
+    def test_no_quality_beats_different_quality(self):
+        """No-quality source beats 1080p when 720p is requested —
+        no-quality is treated as universal (distance 0), not rank 0."""
+        sources = [
+            self._src('', '800 MB', seeders=50),
+            self._src('1080p', '2 GB', seeders=100),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '')
+
+    def test_no_quality_beats_4k_when_720p_requested(self):
+        sources = [
+            self._src('', '800 MB', seeders=50),
+            self._src('4k', '5 GB', seeders=100),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '')
+
+    def test_exact_quality_still_beats_no_quality(self):
+        """When exact match exists, it beats no-quality source
+        (secondary -q_rank sort puts exact match first)."""
+        sources = [
+            self._src('', '800 MB', seeders=100),
+            self._src('720p', '900 MB', seeders=5),
+        ]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '720p')
+
+    def test_no_quality_only_source_is_picked(self):
+        sources = [self._src('', '500 MB', seeders=10)]
+        best = cli.pick_best_source(sources, quality='720p', max_gb=10)
+        self.assertEqual(best['quality'], '')
+
 
 class FilterByTitleTests(unittest.TestCase):
     def _src(self, show_title):
