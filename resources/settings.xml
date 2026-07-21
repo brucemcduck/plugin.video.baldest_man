@@ -90,6 +90,12 @@
         <allowempty>true</allowempty>
       </constraints>
     </setting>
+    <setting id="download_segments" type="integer" label="Parallel download segments (speeds up large downloads; 1 = off)" default="8">
+      <constraints>
+        <minimum>1</minimum>
+        <maximum>16</maximum>
+      </constraints>
+    </setting>
     <setting id="quick_download_max_sources" type="integer" label="Quick Download: max sources to collect" default="10">
       <constraints>
         <minimum>2</minimum>

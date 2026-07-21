@@ -132,7 +132,6 @@ Added to `settings.xml` in the Offline Downloads category:
 
 ## Testing
 
-Manual test checklist:
 
 1. **Movie quick download** — search a movie → long-press → Quick Download → progress dialog shows scrape/resolve/download → file appears in My Downloads
 2. **Episode quick download** — browse show → season → episode → long-press → Quick Download → same flow

@@ -1,0 +1,4 @@
+1. change search history to be more inward (straight into the seires, ignore the imdb scrape)
+2. add terminal script that will take user input (show or movie) and scrape without 
+the need for kodi (useful for on the fly usage)
+3. 

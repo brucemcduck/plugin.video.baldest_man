@@ -437,7 +437,8 @@ def _quick_download_one(show_title, show_id, year, season_number, episode_number
 
         try:
             direct_url = ad_resolve(magnet, key, timeout=timeout,
-                                    cancel_check=pdlg.iscanceled)
+                                    cancel_check=pdlg.iscanceled,
+                                    season=season_number, episode=episode_number)
             if pdlg.iscanceled():
                 return False
 
@@ -1190,7 +1191,7 @@ elif mode[0] == 'download':
             xbmcplugin.endOfDirectory(addon_handle)
         else:
             # Enforce max_download_size_gb cap (the setting is otherwise decorative)
-            max_gb = int(ADDON.getSetting('max_download_size_gb') or '2')
+            max_gb = int(ADDON.getSetting('max_download_size_gb') or '20')
             max_bytes = max_gb * 1073741824
             est = _parse_size_bytes(args.get('size', [''])[0])
             if est and est > max_bytes:
@@ -1214,17 +1215,19 @@ elif mode[0] == 'download':
                             pdlg.update(min(5, pct * 5 // 100),
                                         "Resolving... ~{}s".format(eta))
 
+                    show_title = args.get('show_title', [''])[0]
+                    season = args.get('season', [None])[0]
+                    episode = args.get('episode', [None])[0]
+
                     direct_url = ad_resolve(url, key, timeout=timeout,
                                             cancel_check=pdlg.iscanceled,
-                                            progress_callback=prog_cb)
+                                            progress_callback=prog_cb,
+                                            season=season, episode=episode)
                     if pdlg.iscanceled():
                         notify("Download cancelled")
                         xbmcplugin.endOfDirectory(addon_handle)
                         raise AllDebridError("Cancelled")
 
-                    show_title = args.get('show_title', [''])[0]
-                    season = args.get('season', [None])[0]
-                    episode = args.get('episode', [None])[0]
                     fname = download_manager.safe_filename(show_title or label, season, episode)
                     dest = os.path.join(download_manager.get_download_dir(), fname)
 
@@ -1310,7 +1313,9 @@ elif mode[0] == 'play':
 
                 direct_url = ad_resolve(url, key, timeout=timeout,
                                         cancel_check=pdlg.iscanceled,
-                                        progress_callback=progress_cb)
+                                        progress_callback=progress_cb,
+                                        season=args.get('season', [None])[0],
+                                        episode=args.get('episode', [None])[0])
                 pdlg.close()
                 last = {'show_title': args.get('show_title', [''])[0],
                         'label': label}
