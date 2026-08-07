@@ -17,6 +17,6 @@
     <description lang="en_GB">A simple video plugin that scrapes videos off websites.</description>
     <platform>all</platform>
     <license>MIT</license>
-    <source>https://github.com/balt_man</source>
+    <source>https://github.com/brucemcduck/plugin.video.baldest_man</source>
   </extension>
 </addon>
