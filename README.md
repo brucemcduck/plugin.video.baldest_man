@@ -2,6 +2,8 @@
 
 Search shows and movies via TMDB, scrape torrent sources, resolve through AllDebrid, and play or download offline.
 
+This is a **personal project** built mainly for my own use across my devices. It’s public so I can install and update it easily on TVs and phones, but it isn’t a supported product — no guarantees, no issue triage, use at your own risk.
+
 Works on any device that runs **Kodi** (Windows, Mac, Linux, Android TV, Fire TV, phones, tablets).
 
 ## Requirements
