@@ -21,9 +21,14 @@ Enable **Settings → Add-ons → Unknown sources** before installing third-part
 
 ## Install (TV / Fire Stick / phone — paste one link)
 
-**One-time on GitHub:** open your repo → **Settings → Pages** → Source: **GitHub Actions** (if not already enabled). Pushes to `master` publish the install files automatically.
+**One-time on GitHub:** open your repo → **Settings → Pages** → under **Build and deployment**:
+- **Source:** Deploy from a branch
+- **Branch:** `master`
+- **Folder:** `/docs` (not `/ root`)
 
-Copy this URL (long-press to copy on mobile/TV):
+Save, then wait 1–2 minutes. Verify in a browser: [brucemcduck.github.io/plugin.video.baldest_man/repo/](https://brucemcduck.github.io/plugin.video.baldest_man/repo/) — you should see a simple install page.
+
+Copy this URL into Kodi (long-press to copy on mobile/TV):
 
 ```
 https://brucemcduck.github.io/plugin.video.baldest_man/repo/
@@ -78,7 +83,7 @@ git commit -m "release: vX.Y.Z"
 git push
 ```
 
-GitHub Actions publishes `docs/` to Pages. Users with the repository installed get updates via **Install from repository**.
+GitHub Pages (branch `master`, folder `/docs`) serves the files after you push. Users with the repository installed get updates via **Install from repository**.
 
 ## First-time setup
 
