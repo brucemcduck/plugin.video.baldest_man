@@ -19,40 +19,43 @@ Works on any device that runs **Kodi** (Windows, Mac, Linux, Android TV, Fire TV
 
 Enable **Settings → Add-ons → Unknown sources** before installing third-party addons.
 
-## Install (TV / Fire Stick / phone — paste one link)
+## Install
 
-**One-time on GitHub:** open your repo → **Settings → Pages** → under **Build and deployment**:
-- **Source:** Deploy from a branch
-- **Branch:** `master`
-- **Folder:** `/docs` (not `/ root`)
+### Option A — Direct zip (works now, no Pages setup)
 
-Save, then wait 1–2 minutes. Verify in a browser: [brucemcduck.github.io/plugin.video.baldest_man/repo/](https://brucemcduck.github.io/plugin.video.baldest_man/repo/) — you should see a simple install page.
+Download this zip on your phone / TV browser / Fire TV Downloader, then in Kodi:
+**Add-ons → Install from zip file** → pick the downloaded file.
 
-Copy this URL into Kodi (long-press to copy on mobile/TV):
-
+**Addon (recommended first install):**
 ```
-https://brucemcduck.github.io/plugin.video.baldest_man/repo/
+https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.0.zip
 ```
 
-Do **not** use the `raw.githubusercontent.com` link — GitHub raw URLs can't list folders, so Kodi fails with "couldn't retrieve info from link".
+**Repository (for later updates via Install from repository):**
+```
+https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/repository.baldest_man-1.0.1.zip
+```
+
+### Option B — Paste-a-link source (needs GitHub Pages once)
+
+Pages is **off** until you enable it. The `github.io` link will 404 until this is done.
+
+1. Open [github.com/brucemcduck/plugin.video.baldest_man/settings/pages](https://github.com/brucemcduck/plugin.video.baldest_man/settings/pages)
+2. **Build and deployment → Source:** Deploy from a branch
+3. **Branch:** `master` · **Folder:** `/docs` (not `/ (root)`)
+4. **Save** → wait 1–2 minutes
+5. Confirm in a browser: [brucemcduck.github.io/plugin.video.baldest_man/repo/](https://brucemcduck.github.io/plugin.video.baldest_man/repo/)
 
 Then in Kodi:
 
-1. **Settings → File manager → Add source** → paste the URL above → name it `bald_man`
-2. **Add-ons → Install from zip file** → `bald_man` → **`repository.baldest_man-1.0.1.zip`**
-3. **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man** → Install
+1. **Settings → File manager → Add source** → paste:
+   ```
+   https://brucemcduck.github.io/plugin.video.baldest_man/repo/
+   ```
+2. **Add-ons → Install from zip file** → that source → **`repository.baldest_man-1.0.1.zip`**
+3. **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man**
 
-Future updates appear under **Install from repository**.
-
-### One-shot install (no repository)
-
-If you only want the addon once and don't need in-app updates:
-
-1. Add the same source URL above (or open it in a browser on your phone)
-2. **Install from zip** → **`plugin.video.baldest_man-0.1.0.zip`** (under `zips/plugin.video.baldest_man/`)
-
-Or download the zip in a browser and sideload it locally:
-`https://brucemcduck.github.io/plugin.video.baldest_man/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.0.zip`
+Do **not** use `raw.githubusercontent.com/.../repo/` as a Kodi source — raw URLs can't list folders.
 
 ## Other install methods
 
