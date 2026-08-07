@@ -44,7 +44,7 @@ Replace `resources/settings.xml`:
     </setting>
   </category>
   <category label="TMDB">
-    <setting id="tmdb_api_key" type="text" label="API Key" default="9dd14ab7866d37f8011440c6a4e71b68">
+    <setting id="tmdb_api_key" type="text" label="API Key" default="">
       <constraints>
         <allowempty>false</allowempty>
         <hidden>true</hidden>
@@ -67,7 +67,7 @@ Replace `resources/settings.xml`:
 </settings>
 ```
 
-Note: the bundled key `9dd14ab7866d37f8011440c6a4e71b68` is a legitimate free TMDB API v3 key (used by the Kodi community). Users can override by editing the setting.
+Note: users must supply their own free TMDB API v3 key in addon settings (see themoviedb.org/settings/api).
 
 - [ ] **Step 2: Verify settings parse as valid XML**
 
@@ -240,7 +240,7 @@ Run:
 ```bash
 python3 -c "
 from resources.lib import tmdb
-shows = tmdb.search_shows('silicon valley', '9dd14ab7866d37f8011440c6a4e71b68')
+shows = tmdb.search_shows('silicon valley', 'YOUR_TMDB_API_KEY')
 assert len(shows) > 0
 s = shows[0]
 assert s['title'] == 'Silicon Valley'
@@ -248,15 +248,15 @@ assert s['year'] == '2014'
 assert 'poster_url' in s
 print(f'OK: found {len(shows)} shows, first: {s[\"title\"]} ({s[\"year\"]})')
 
-seasons = tmdb.get_seasons(s['id'], '9dd14ab7866d37f8011440c6a4e71b68')
+seasons = tmdb.get_seasons(s['id'], 'YOUR_TMDB_API_KEY')
 assert len(seasons) >= 6
 print(f'OK: {len(seasons)} seasons')
 
-eps = tmdb.get_episodes(s['id'], 1, '9dd14ab7866d37f8011440c6a4e71b68')
+eps = tmdb.get_episodes(s['id'], 1, 'YOUR_TMDB_API_KEY')
 assert len(eps) >= 8
 print(f'OK: {len(eps)} episodes, first: {eps[0][\"name\"]}')
 
-movies = tmdb.search_movies('the matrix', '9dd14ab7866d37f8011440c6a4e71b68')
+movies = tmdb.search_movies('the matrix', 'YOUR_TMDB_API_KEY')
 assert len(movies) > 0
 print(f'OK: found {len(movies)} movies, first: {movies[0][\"title\"]} ({movies[0][\"year\"]})')
 
@@ -894,16 +894,16 @@ python3 -c "
 from resources.lib import tmdb, scraper_runner
 
 # Full flow simulation
-shows = tmdb.search_shows('silicon valley', '9dd14ab7866d37f8011440c6a4e71b68')
+shows = tmdb.search_shows('silicon valley', 'YOUR_TMDB_API_KEY')
 assert shows, 'No shows found'
 show = shows[0]
 print(f'Show: {show[\"title\"]} ({show[\"year\"]})')
 
-seasons = tmdb.get_seasons(show['id'], '9dd14ab7866d37f8011440c6a4e71b68)
+seasons = tmdb.get_seasons(show['id'], 'YOUR_TMDB_API_KEY)
 assert seasons, 'No seasons found'
 print(f'Seasons: {len(seasons)} ({seasons[0][\"name\"]} - {seasons[-1][\"name\"]})')
 
-eps = tmdb.get_episodes(show['id'], 1, '9dd14ab7866d37f8011440c6a4e71b68)
+eps = tmdb.get_episodes(show['id'], 1, 'YOUR_TMDB_API_KEY)
 assert eps, 'No episodes found'
 print(f'Season 1 episodes: {len(eps)}')
 

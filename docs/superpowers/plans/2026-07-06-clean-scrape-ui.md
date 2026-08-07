@@ -51,7 +51,7 @@ Run:
 ```bash
 python3 -c "
 from resources.lib import tmdb
-key = 'f090bb54758cabf231fb605d3e3e0468'
+key = 'YOUR_TMDB_API_KEY'
 # TV show
 poster = tmdb.get_poster(63351, key, is_movie=False)
 assert poster and poster.startswith('https://image.tmdb.org/t/p/w500/'), f'Bad poster: {poster}'
@@ -280,7 +280,7 @@ print(f'Movie label: {label_result(mov)}')
 print('Labels OK')
 
 # Test poster 
-key = 'f090bb54758cabf231fb605d3e3e0468'
+key = 'YOUR_TMDB_API_KEY'
 poster = tmdb.get_poster(603, key, is_movie=True)
 assert poster, 'No poster!'
 print(f'Poster URL: {poster[:50]}...')
