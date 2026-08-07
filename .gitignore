@@ -15,3 +15,6 @@ Thumbs.db
 # Never commit Kodi userdata or local credentials
 settings.xml
 **/addon_data/
+
+# Internal planning docs (local only)
+docs/superpowers/
