@@ -17,16 +17,32 @@ Works on any device that runs **Kodi** (Windows, Mac, Linux, Android TV, Fire TV
 
 Enable **Settings → Add-ons → Unknown sources** before installing third-party addons.
 
-## Install on any device
+## Install (TV / Fire Stick / phone — paste one link)
 
-### Option A — Download ZIP (easiest)
+Copy this URL (long-press to copy on mobile/TV):
 
-1. Open [github.com/brucemcduck/plugin.video.baldest_man](https://github.com/brucemcduck/plugin.video.baldest_man)
-2. Click **Code → Download ZIP**
-3. In Kodi: **Settings → Add-ons → Install from zip file** → pick the ZIP
-4. **Important:** rename the extracted folder to `plugin.video.baldest_man` if GitHub added a suffix like `-master`
+```
+https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/
+```
 
-### Option B — Git clone (PC / Mac / Linux)
+Then in Kodi:
+
+1. **Settings → File manager → Add source** → paste the URL above → name it `bald_man`
+2. **Add-ons → Install from zip file** → `bald_man` → **`repository.baldest_man-1.0.0.zip`**
+3. **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man** → Install
+
+Future updates appear under **Install from repository** — no re-downloading source code.
+
+### One-shot install (no repository)
+
+If you only want the addon once and don't need in-app updates:
+
+1. Add this source instead: `https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/zips/plugin.video.baldest_man/`
+2. **Install from zip** → **`plugin.video.baldest_man-0.1.0.zip`**
+
+## Other install methods
+
+### Git clone (developers)
 
 ```bash
 git clone https://github.com/brucemcduck/plugin.video.baldest_man.git
@@ -39,15 +55,21 @@ Copy or symlink into your Kodi addons folder:
 | Windows | `%APPDATA%\Kodi\addons\` |
 | Linux | `~/.kodi/addons/` |
 | macOS | `~/Library/Application Support/Kodi/addons/` |
-| Android / Fire TV | Use **Install from zip** or a file manager + Kodi file picker |
 
 Restart Kodi after copying.
 
-### Option C — Android TV / Fire TV / phone / tablet
+## Releasing a new version
 
-1. Download the ZIP on your device (or transfer via USB/cloud)
-2. Kodi → **Add-ons → Install from zip file** → browse to the ZIP
-3. Configure settings (see below)
+Bump `version` in `addon.xml`, then rebuild the hosted repo files:
+
+```bash
+python tools/build_repo.py
+git add repo/ addon.xml
+git commit -m "release: vX.Y.Z"
+git push
+```
+
+Users with the repository installed get updates via **Install from repository**.
 
 ## First-time setup
 

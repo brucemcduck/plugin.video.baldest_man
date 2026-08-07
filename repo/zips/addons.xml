@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addons>
+<addon id="plugin.video.baldest_man"
+       name="bald_man"
+       version="0.1.0"
+       provider-name="bald_man">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+    <import addon="script.module.requests" version="2.22.0"/>
+    <import addon="script.module.beautifulsoup4" version="4.8.0"/>
+  </requires>
+  <extension point="xbmc.python.pluginsource"
+             library="main.py">
+    <provides>video</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Scrapes videos from websites</summary>
+    <description lang="en_GB">A simple video plugin that scrapes videos off websites.</description>
+    <platform>all</platform>
+    <license>MIT</license>
+    <source>https://github.com/brucemcduck/plugin.video.baldest_man</source>
+  </extension>
+</addon>
+<addon id="repository.baldest_man"
+       name="bald_man Repository"
+       version="1.0.0"
+       provider-name="bald_man">
+  <extension point="xbmc.addon.repository" name="bald_man Add-ons">
+    <dir>
+      <info compressed="false">https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/zips/addons.xml</info>
+      <checksum>https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/zips/addons.xml.md5</checksum>
+      <datadir zip="true">https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/zips/</datadir>
+    </dir>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Install bald_man from GitHub</summary>
+    <description lang="en_GB">Repository for the bald_man Kodi video addon. Add this source once, install the repo zip, then install bald_man from Video add-ons.</description>
+    <platform>all</platform>
+  </extension>
+</addon>
+</addons>
