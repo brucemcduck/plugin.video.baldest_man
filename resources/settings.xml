@@ -32,7 +32,7 @@
     </setting>
   </category>
   <category label="TMDB">
-    <setting id="tmdb_api_key" type="text" label="API Key" default="">
+    <setting id="tmdb_api_key" type="text" label="API Key" default="d3481a72dee2c7b030bb72b09f640401">
       <constraints>
         <allowempty>false</allowempty>
         <hidden>true</hidden>

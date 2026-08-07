@@ -28,7 +28,7 @@ Download this zip on your phone / TV browser / Fire TV Downloader, then in Kodi:
 
 **Addon (recommended first install):**
 ```
-https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.0.zip
+https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.1.zip
 ```
 
 **Repository (for later updates via Install from repository):**
@@ -55,7 +55,7 @@ Then in Kodi:
    Do **not** use the GitHub.com page, `raw.githubusercontent.com`, or the site root — those won't list the zips.
 2. **Add-ons → Install from zip file** → pick the `bald_man` source → you should see:
    - `repository.baldest_man-1.0.1.zip`
-   - `plugin.video.baldest_man-0.1.0.zip`
+   - `plugin.video.baldest_man-0.1.1.zip`
 3. Install the **repository** zip first, then **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man**
 
 If the source opens but the list is empty, remove the source and re-add with the exact URL above (trailing slash matters on some devices).
@@ -95,7 +95,7 @@ GitHub Pages (branch `master`, folder `/docs`) serves the files after you push. 
 
 1. Open **Add-ons → Video add-ons → bald_man → Configure**
 2. **AllDebrid** → **Authorize AllDebrid (PIN)** and complete the browser flow
-3. **TMDB** → paste your API key from [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
+3. **TMDB** — a default API key is bundled; override in settings only if you want your own from [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
 4. (Optional) **Trakt** → add Client ID and authorize for watchlist/sync
 
 ## CLI (download without Kodi UI)
