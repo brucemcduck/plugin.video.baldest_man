@@ -99,27 +99,18 @@ def _zip_addon(addon_id, source_dir, dest_zip):
                     zf.write(full, os.path.relpath(full, staging))
 
 
-def _write_index_html(repo_zip_name, plugin_zip_rel):
-    return '''<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>bald_man Kodi repo</title></head>
-<body>
-<h1>bald_man</h1>
-<p>Kodi file source URL (paste in File manager):</p>
-<pre>{base}/</pre>
-<ul>
-  <li><a href="{repo_zip}">Install repository ({repo_zip_name})</a></li>
-  <li><a href="{plugin_zip}">Install addon only ({plugin_zip_name})</a></li>
-</ul>
-</body>
-</html>
-'''.format(
-        base=PAGES_BASE,
-        repo_zip=repo_zip_name,
-        repo_zip_name=os.path.basename(repo_zip_name),
-        plugin_zip=plugin_zip_rel,
-        plugin_zip_name=os.path.basename(plugin_zip_rel),
-    )
+def _write_dir_index(entries, title='Index of /'):
+    """Apache-style listing. Kodi's Install-from-zip browser parses
+    <a href="name.zip">name.zip</a> — link text must be the filename."""
+    lines = [
+        '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">',
+        '<html><head><title>{}</title></head><body>'.format(title),
+        '<h1>{}</h1><hr><pre>'.format(title),
+    ]
+    for name, href in entries:
+        lines.append('<a href="{}">{}</a>'.format(href, name))
+    lines.append('</pre><hr></body></html>')
+    return '\n'.join(lines) + '\n'
 
 
 def main():
@@ -155,12 +146,42 @@ def main():
     repo_version = _read_version(REPO_TEMPLATE)
     repo_zip_name = 'repository.baldest_man-{}.zip'.format(repo_version)
     repo_zip = os.path.join(ZIPS_DIR, 'repository.baldest_man', repo_zip_name)
-    easy_zip = os.path.join(HOST_ROOT, repo_zip_name)
-    shutil.copy2(repo_zip, easy_zip)
+    easy_repo = os.path.join(HOST_ROOT, repo_zip_name)
+    shutil.copy2(repo_zip, easy_repo)
 
-    index_path = os.path.join(HOST_ROOT, 'index.html')
-    with open(index_path, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(_write_index_html(repo_zip_name, plugin_zip_rel))
+    # Flat copies at repo root so Install-from-zip shows both zips immediately
+    # (no folder navigation). Link text == filename for Kodi's HTML parser.
+    plugin_zip_name = os.path.basename(plugin_zip_rel)
+    easy_plugin = os.path.join(HOST_ROOT, plugin_zip_name)
+    shutil.copy2(os.path.join(HOST_ROOT, plugin_zip_rel), easy_plugin)
+
+    root_entries = [
+        (repo_zip_name, repo_zip_name),
+        (plugin_zip_name, plugin_zip_name),
+        ('zips/', 'zips/'),
+    ]
+    with open(os.path.join(HOST_ROOT, 'index.html'), 'w',
+              encoding='utf-8', newline='\n') as f:
+        f.write(_write_dir_index(root_entries, 'Index of /repo/'))
+
+    # Subfolder indexes so browsing still works
+    zips_entries = []
+    for addon_id in ADDONS:
+        zips_entries.append(('{}/'.format(addon_id), '{}/'.format(addon_id)))
+        sub_entries = []
+        sub_dir = os.path.join(ZIPS_DIR, addon_id)
+        for fname in sorted(os.listdir(sub_dir)):
+            if fname.endswith('.zip'):
+                sub_entries.append((fname, fname))
+        with open(os.path.join(sub_dir, 'index.html'), 'w',
+                  encoding='utf-8', newline='\n') as f:
+            f.write(_write_dir_index(
+                sub_entries, 'Index of /repo/zips/{}/'.format(addon_id)))
+    zips_entries.append(('addons.xml', 'addons.xml'))
+    zips_entries.append(('addons.xml.md5', 'addons.xml.md5'))
+    with open(os.path.join(ZIPS_DIR, 'index.html'), 'w',
+              encoding='utf-8', newline='\n') as f:
+        f.write(_write_dir_index(zips_entries, 'Index of /repo/zips/'))
 
     print('Wrote {}'.format(xml_path))
     print('Pages root: {}/'.format(PAGES_BASE))

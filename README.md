@@ -48,14 +48,17 @@ Pages is **off** until you enable it. The `github.io` link will 404 until this i
 
 Then in Kodi:
 
-1. **Settings → File manager → Add source** → paste:
+1. **Settings → File manager → Add source** → paste **exactly** (include trailing `/repo/`):
    ```
    https://brucemcduck.github.io/plugin.video.baldest_man/repo/
    ```
-2. **Add-ons → Install from zip file** → that source → **`repository.baldest_man-1.0.1.zip`**
-3. **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man**
+   Do **not** use the GitHub.com page, `raw.githubusercontent.com`, or the site root — those won't list the zips.
+2. **Add-ons → Install from zip file** → pick the `bald_man` source → you should see:
+   - `repository.baldest_man-1.0.1.zip`
+   - `plugin.video.baldest_man-0.1.0.zip`
+3. Install the **repository** zip first, then **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man**
 
-Do **not** use `raw.githubusercontent.com/.../repo/` as a Kodi source — raw URLs can't list folders.
+If the source opens but the list is empty, remove the source and re-add with the exact URL above (trailing slash matters on some devices).
 
 ## Other install methods
 
