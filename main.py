@@ -22,10 +22,12 @@ from resources.lib.alldebrid import (resolve as ad_resolve, AllDebridError,
                                       get_user as ad_get_user,
                                       revoke as ad_revoke_auth)
 from resources.lib.download_manager import DownloadError
-from resources.lib.trakt import (get_device_code, poll_for_token, scrobble_start,
+from resources.lib.trakt import (get_device_code, poll_for_token,
                                   get_watchlist, get_collection,
                                   get_watched_shows, get_show_progress,
-                                  TraktError)
+                                  get_user as trakt_get_user,
+                                  revoke as trakt_revoke_auth,
+                                  write_now_playing, TraktError)
 from scrapers import torrentio
 
 ADDON = xbmcaddon.Addon()
@@ -1017,7 +1019,11 @@ elif mode[0] == 'ad_account_info':
 elif mode[0] == 'auth_trakt':
     client_id = ADDON.getSetting('trakt_client_id')
     if not client_id:
-        notify('Trakt Client ID not set')
+        xbmcgui.Dialog().ok(
+            "Trakt Client ID required",
+            "Create a free API app at trakt.tv/oauth/applications\n"
+            "(Redirect uri: urn:ietf:wg:oauth:2.0:oob), then paste the "
+            "Client ID into Addon settings → Trakt.")
     else:
         try:
             data = get_device_code(client_id)
@@ -1026,7 +1032,7 @@ elif mode[0] == 'auth_trakt':
         else:
             msg = ("1. Go to: [COLOR skyblue]{}[/COLOR]\n"
                    "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
-                   "3. Press OK after authorizing").format(
+                   "3. Press OK, then wait for confirmation").format(
                        data.get("verification_url", "https://trakt.tv/activate"),
                        data.get("user_code", ""))
             xbmcgui.Dialog().ok("Trakt Authorization", msg)
@@ -1038,6 +1044,12 @@ elif mode[0] == 'auth_trakt':
                                        interval=data.get("interval", 5))
                 ADDON.setSetting('trakt_access_token', token["access_token"])
                 ADDON.setSetting('trakt_refresh_token', token["refresh_token"])
+                try:
+                    user = trakt_get_user(token["access_token"])
+                    ADDON.setSetting('traktusername',
+                                     user.get('username', '') or '')
+                except TraktError:
+                    pass
                 pdlg.close()
                 notify("Trakt authorized!")
             except TraktError as e:
@@ -1046,12 +1058,40 @@ elif mode[0] == 'auth_trakt':
 
     xbmcplugin.endOfDirectory(addon_handle)
 
+elif mode[0] == 'trakt_revoke':
+    trakt_revoke_auth()
+    notify("Trakt authorization revoked")
+    xbmcplugin.endOfDirectory(addon_handle)
+
+elif mode[0] == 'trakt_account_info':
+    access_token = ADDON.getSetting('trakt_access_token')
+    if not access_token:
+        notify("Trakt not authorized")
+    else:
+        try:
+            user = trakt_get_user(access_token)
+            username = user.get('username', '?')
+            ADDON.setSetting('traktusername', username or '')
+            name = user.get('name') or username
+            vip = user.get('vip') or user.get('vip_ep')
+            lines = ["User:  {}".format(name),
+                     "Login: {}".format(username)]
+            if vip:
+                lines.append("Status: VIP")
+            xbmcgui.Dialog().ok("Trakt Account", "\n".join(lines))
+        except TraktError as e:
+            notify("Trakt: " + clean_error(e))
+    xbmcplugin.endOfDirectory(addon_handle)
+
 # --- Trakt Browse: watchlist, collection, progress ---
 elif mode[0] == 'trakt_browse':
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     access_token = ADDON.getSetting('trakt_access_token')
     list_type = args.get('list_type', ['watchlist'])[0]
 
     if not access_token:
+        notify("Authorize Trakt in settings")
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
     else:
         items = []
@@ -1059,26 +1099,53 @@ elif mode[0] == 'trakt_browse':
             if list_type == 'watchlist':
                 shows = get_watchlist(access_token, 'shows')
                 movies = get_watchlist(access_token, 'movies')
-                items = [('show', s['show'], s['show']['ids']) for s in shows]
-                items += [('movie', m['movie'], m['movie']['ids']) for m in movies]
+                for s in shows:
+                    show = s.get('show') or {}
+                    if show:
+                        items.append(('show', show, show.get('ids') or {}))
+                for m in movies:
+                    movie = m.get('movie') or {}
+                    if movie:
+                        items.append(('movie', movie, movie.get('ids') or {}))
             elif list_type == 'collection':
                 shows = get_collection(access_token, 'shows')
                 movies = get_collection(access_token, 'movies')
-                items = [('show', s['show'], s['show']['ids']) for s in shows]
-                items += [('movie', m['movie'], m['movie']['ids']) for m in movies]
+                for s in shows:
+                    show = s.get('show') or {}
+                    if show:
+                        items.append(('show', show, show.get('ids') or {}))
+                for m in movies:
+                    movie = m.get('movie') or {}
+                    if movie:
+                        items.append(('movie', movie, movie.get('ids') or {}))
             elif list_type == 'progress':
                 watched = get_watched_shows(access_token)
+                jobs = []
                 for w in watched:
-                    sid = w['show']['ids'].get('trakt')
+                    show = w.get('show') or {}
+                    sid = (show.get('ids') or {}).get('trakt')
                     if sid:
-                        prog = get_show_progress(access_token, sid)
-                        ne = prog.get('next_episode')
-                        if ne:
-                            items.append(('progress', w['show'],
-                                          {'tmdb': w['show']['ids'].get('tmdb'),
-                                           'season': ne['season'],
-                                           'number': ne['number'],
-                                           'title': ne.get('title', '')}))
+                        jobs.append((show, sid))
+
+                def _fetch_prog(pair):
+                    show, sid = pair
+                    return show, get_show_progress(access_token, sid)
+
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    futures = [pool.submit(_fetch_prog, j) for j in jobs]
+                    for fut in as_completed(futures):
+                        try:
+                            show, prog = fut.result()
+                        except Exception:
+                            continue
+                        ne = (prog or {}).get('next_episode')
+                        if not ne:
+                            continue
+                        ids = dict(show.get('ids') or {})
+                        ids['season'] = ne.get('season')
+                        ids['number'] = ne.get('number')
+                        ids['title'] = ne.get('title', '')
+                        items.append(('progress', show, ids))
         except Exception:
             pass
 
@@ -1086,34 +1153,81 @@ elif mode[0] == 'trakt_browse':
             li = xbmcgui.ListItem("Nothing found")
             xbmcplugin.addDirectoryItem(addon_handle, '', li, isFolder=False)
         else:
+            # Fetch posters in parallel for items that have TMDB ids
+            poster_map = {}
+            tmdb_key = tmdb_api_key()
+            poster_jobs = []
+            for item_type, data, ids in items:
+                tid = ids.get('tmdb')
+                if tid and tmdb_key:
+                    poster_jobs.append(
+                        (tid, item_type in ('movie',), str(tid)))
+
+            if poster_jobs:
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    futs = {
+                        pool.submit(tmdb.get_poster, int(tid), tmdb_key,
+                                    is_movie=is_movie): key
+                        for tid, is_movie, key in poster_jobs
+                    }
+                    for fut in as_completed(futs):
+                        key = futs[fut]
+                        try:
+                            poster_map[key] = fut.result()
+                        except Exception:
+                            pass
+
             for item_type, data, ids in items:
                 tmdb_id = ids.get('tmdb')
-                if not tmdb_id:
-                    continue
-                title = data.get('title', '')
-                year = str(data.get('year', ''))
-                label = f"{title} ({year})" if year else title
-                li = xbmcgui.ListItem(label)
+                title = data.get('title', '') or '?'
+                year = str(data.get('year', '') or '')
+                label = "{} ({})".format(title, year) if year else title
 
                 if item_type == 'progress':
-                    url = build_url({'mode': 'scrape',
-                                     'show_title': title,
-                                     'show_id': str(tmdb_id),
-                                     'season_number': str(ids.get('season', '')),
-                                     'episode_number': str(ids.get('number', '')),
-                                     'episode_title': ids.get('title', ''),
-                                     'content_type': 'shows'})
+                    s_num = ids.get('season')
+                    e_num = ids.get('number')
+                    ep_title = ids.get('title') or ''
+                    if s_num is not None and e_num is not None:
+                        label = "{} — S{:02d}E{:02d}".format(
+                            title, int(s_num), int(e_num))
+                        if ep_title:
+                            label += " · {}".format(ep_title)
+
+                li = xbmcgui.ListItem(label)
+                if tmdb_id and str(tmdb_id) in poster_map and poster_map[str(tmdb_id)]:
+                    li.setArt({'poster': poster_map[str(tmdb_id)],
+                               'thumb': poster_map[str(tmdb_id)]})
+
+                if item_type == 'progress':
+                    params = {'mode': 'scrape',
+                              'show_title': title,
+                              'season_number': str(ids.get('season', '')),
+                              'episode_number': str(ids.get('number', '')),
+                              'episode_title': ids.get('title', ''),
+                              'content_type': 'shows'}
+                    if tmdb_id:
+                        params['show_id'] = str(tmdb_id)
+                    url = build_url(params)
                     xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
                 elif item_type == 'show':
-                    url = build_url({'mode': 'seasons',
-                                     'show_id': str(tmdb_id),
-                                     'show_title': title})
+                    if tmdb_id:
+                        url = build_url({'mode': 'seasons',
+                                         'show_id': str(tmdb_id),
+                                         'show_title': title})
+                    else:
+                        url = build_url({'mode': 'scrape',
+                                         'show_title': title,
+                                         'content_type': 'shows'})
                     xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
                 else:
-                    url = build_url({'mode': 'scrape',
-                                     'show_title': title,
-                                     'show_id': str(tmdb_id),
-                                     'content_type': 'movies'})
+                    params = {'mode': 'scrape',
+                              'show_title': title,
+                              'content_type': 'movies'}
+                    if tmdb_id:
+                        params['show_id'] = str(tmdb_id)
+                    if year:
+                        params['year'] = year
+                    url = build_url(params)
                     xbmcplugin.addDirectoryItem(addon_handle, url, li, isFolder=True)
 
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
@@ -1335,23 +1449,20 @@ elif mode[0] == 'play':
                 if et:
                     last['episode_title'] = et
                 ADDON.setSetting('last_played', json.dumps(last))
+
+                # Handoff to service.py for Trakt scrobble start/pause/stop
+                access_token = ADDON.getSetting('trakt_access_token')
+                imdb = args.get('imdb_id', [None])[0]
+                if access_token and imdb:
+                    np = {'imdb_id': imdb, 'started': int(time.time())}
+                    if s:
+                        np['season'] = int(s)
+                    if ep:
+                        np['episode'] = int(ep)
+                    write_now_playing(np)
+
                 li = xbmcgui.ListItem(label, path=direct_url)
                 xbmcplugin.setResolvedUrl(addon_handle, True, li)
-
-                # Scrobble start to Trakt
-                access_token = ADDON.getSetting('trakt_access_token')
-                if access_token:
-                    imdb = args.get('imdb_id', [None])[0]
-                    if imdb:
-                        try:
-                            s = args.get('season', [None])[0]
-                            ep = args.get('episode', [None])[0]
-                            if s and ep:
-                                scrobble_start(access_token, imdb, int(s), int(ep))
-                            else:
-                                scrobble_start(access_token, imdb)
-                        except Exception:
-                            pass
             except AllDebridError as e:
                 if pdlg is not None:
                     try:

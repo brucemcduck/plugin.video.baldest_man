@@ -2,7 +2,7 @@
 <addons>
 <addon id="plugin.video.baldest_man"
        name="bald_man"
-       version="0.1.1"
+       version="0.1.2"
        provider-name="bald_man">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -13,6 +13,7 @@
              library="main.py">
     <provides>video</provides>
   </extension>
+  <extension point="xbmc.service" library="service.py"/>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Scrapes videos from websites</summary>
     <description lang="en_GB">A simple video plugin that scrapes videos off websites.</description>

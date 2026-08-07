@@ -19,46 +19,49 @@ Works on any device that runs **Kodi** (Windows, Mac, Linux, Android TV, Fire TV
 
 Enable **Settings → Add-ons → Unknown sources** before installing third-party addons.
 
-## Install
+## Install (recommended — enables auto-updates)
 
-### Option A — Direct zip (works now, no Pages setup)
+Kodi will auto-update bald_man when you bump the version and push a new repo build — **if** you install through the repository (not by sideloading the plugin zip alone).
 
-Download this zip on your phone / TV browser / Fire TV Downloader, then in Kodi:
-**Add-ons → Install from zip file** → pick the downloaded file.
+### 1. Enable GitHub Pages (once)
 
-**Addon (recommended first install):**
-```
-https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.1.zip
-```
+1. [Settings → Pages](https://github.com/brucemcduck/plugin.video.baldest_man/settings/pages)
+2. **Source:** Deploy from a branch · **Branch:** `master` · **Folder:** `/docs`
+3. Confirm: [brucemcduck.github.io/plugin.video.baldest_man/repo/](https://brucemcduck.github.io/plugin.video.baldest_man/repo/)
 
-**Repository (for later updates via Install from repository):**
-```
-https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/repository.baldest_man-1.0.1.zip
-```
+### 2. Install the repository, then the addon
 
-### Option B — Paste-a-link source (needs GitHub Pages once)
-
-Pages is **off** until you enable it. The `github.io` link will 404 until this is done.
-
-1. Open [github.com/brucemcduck/plugin.video.baldest_man/settings/pages](https://github.com/brucemcduck/plugin.video.baldest_man/settings/pages)
-2. **Build and deployment → Source:** Deploy from a branch
-3. **Branch:** `master` · **Folder:** `/docs` (not `/ (root)`)
-4. **Save** → wait 1–2 minutes
-5. Confirm in a browser: [brucemcduck.github.io/plugin.video.baldest_man/repo/](https://brucemcduck.github.io/plugin.video.baldest_man/repo/)
-
-Then in Kodi:
-
-1. **Settings → File manager → Add source** → paste **exactly** (include trailing `/repo/`):
+1. **Settings → File manager → Add source** → paste:
    ```
    https://brucemcduck.github.io/plugin.video.baldest_man/repo/
    ```
-   Do **not** use the GitHub.com page, `raw.githubusercontent.com`, or the site root — those won't list the zips.
-2. **Add-ons → Install from zip file** → pick the `bald_man` source → you should see:
-   - `repository.baldest_man-1.0.1.zip`
-   - `plugin.video.baldest_man-0.1.1.zip`
-3. Install the **repository** zip first, then **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man**
+2. **Add-ons → Install from zip file** → that source → **`repository.baldest_man-1.0.1.zip`** only  
+   (Do **not** install `plugin.video.baldest_man-*.zip` here if you want clean repo updates.)
+3. **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man** → Install
 
-If the source opens but the list is empty, remove the source and re-add with the exact URL above (trailing slash matters on some devices).
+### 3. Turn on Kodi auto-updates (once per device)
+
+**Settings → System → Add-ons:**
+
+- **Updates:** Install updates automatically
+- **Update official add-ons from:** Any repositories (needed for third-party repos)
+
+Kodi checks repos about once a day (and often on startup). After you publish a higher `version` in `addon.xml` + rebuild/push the repo, devices pick it up on the next check — no re-downloading zips by hand.
+
+Force a check anytime: **Add-ons → (left menu) → Check for updates**.
+
+### Fallback — direct plugin zip (no auto-update)
+
+If you only want a one-shot install without the repo:
+
+```
+https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.2.zip
+```
+
+Or install `repository.baldest_man-1.0.1.zip` the same way from:
+```
+https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/docs/repo/repository.baldest_man-1.0.1.zip
+```
 
 ## Other install methods
 
@@ -78,9 +81,10 @@ Copy or symlink into your Kodi addons folder:
 
 Restart Kodi after copying.
 
-## Releasing a new version
+## Releasing a new version (triggers auto-update)
 
-Bump `version` in `addon.xml`, then rebuild the hosted repo files:
+1. Bump `version` in `addon.xml` (must be higher than the last release — e.g. `0.1.1` → `0.1.2`)
+2. Rebuild and push:
 
 ```bash
 python tools/build_repo.py
@@ -89,7 +93,7 @@ git commit -m "release: vX.Y.Z"
 git push
 ```
 
-GitHub Pages (branch `master`, folder `/docs`) serves the files after you push. Users with the repository installed get updates via **Install from repository**.
+Devices with **repository.baldest_man** installed + auto-updates on will install the new zip from Pages on the next update check. No version bump = no update (Kodi ignores identical versions).
 
 ## First-time setup
 

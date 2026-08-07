@@ -53,7 +53,18 @@
     </setting>
   </category>
   <category label="Trakt">
-    <setting id="trakt_client_id" type="text" label="Client ID" default="">
+    <setting id="trakt_client_id" type="text" label="Client ID (from trakt.tv/oauth/applications)" default="">
+      <constraints>
+        <allowempty>true</allowempty>
+      </constraints>
+    </setting>
+    <setting label="Authorize Device" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=auth_trakt)"/>
+    <setting label="Revoke Authorization" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=trakt_revoke)"/>
+    <setting label="Account Info" type="action"
+             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=trakt_account_info)"/>
+    <setting id="traktusername" type="text" label="Logged in as" default="">
       <constraints>
         <allowempty>true</allowempty>
       </constraints>
@@ -70,8 +81,6 @@
         <hidden>true</hidden>
       </constraints>
     </setting>
-    <setting label="Authorize Device" type="action"
-             action="RunPlugin(plugin://plugin.video.baldest_man/?mode=auth_trakt)"/>
   </category>
   <category label="Offline Downloads">
     <setting id="offline_quality" type="text" label="Preferred quality for offline" default="720p">
