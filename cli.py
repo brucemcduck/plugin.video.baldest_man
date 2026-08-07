@@ -16,8 +16,19 @@ from resources.lib.alldebrid import AllDebridError
 from resources.lib.download_manager import DownloadError
 
 
-KODI_SETTINGS_PATH = os.path.expanduser(
-    '~/.kodi/userdata/addon_data/plugin.video.baldest_man/settings.xml')
+def _kodi_settings_path():
+    """Return the platform-default path to Kodi addon settings.xml."""
+    if sys.platform == 'win32':
+        appdata = os.environ.get('APPDATA', '')
+        if appdata:
+            return os.path.join(
+                appdata, 'Kodi', 'userdata', 'addon_data',
+                'plugin.video.baldest_man', 'settings.xml')
+    return os.path.expanduser(
+        '~/.kodi/userdata/addon_data/plugin.video.baldest_man/settings.xml')
+
+
+KODI_SETTINGS_PATH = _kodi_settings_path()
 
 # Local copy of main.py's _QUALITY_RANK — not imported from main.py because
 # main.py imports xbmc at module top level and is unsafe to import outside Kodi.

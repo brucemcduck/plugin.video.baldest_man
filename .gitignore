@@ -1,1 +1,17 @@
 __pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.log
+debug-*.log
+.idea/
+.vscode/
+*.zip
+.DS_Store
+Thumbs.db
+
+# Never commit Kodi userdata or local credentials
+settings.xml
+**/addon_data/

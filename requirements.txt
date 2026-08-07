@@ -1,0 +1,5 @@
+# For cli.py and check_scrapers.py outside Kodi.
+# Inside Kodi, dependencies come from script.module.requests and
+# script.module.beautifulsoup4 (see addon.xml).
+requests>=2.22.0
+beautifulsoup4>=4.8.0
