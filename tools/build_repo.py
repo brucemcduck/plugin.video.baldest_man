@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Build Kodi repository zips and generate addons.xml for GitHub hosting.
+"""Build Kodi repository zips and generate addons.xml for GitHub Pages hosting.
 
 Usage (from repo root):
     python tools/build_repo.py
 
-Outputs:
-    repo/zips/addons.xml
-    repo/zips/addons.xml.md5
-    repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-VERSION.zip
-    repo/zips/repository.baldest_man/repository.baldest_man-VERSION.zip
-    repo/repository.baldest_man-VERSION.zip  (easy TV install copy)
+Outputs under docs/repo/ (served by GitHub Pages):
+    docs/repo/index.html
+    docs/repo/repository.baldest_man-VERSION.zip
+    docs/repo/zips/addons.xml
+    docs/repo/zips/addons.xml.md5
+    docs/repo/zips/<addon_id>/<addon_id>-VERSION.zip
 """
 import hashlib
 import os
@@ -21,16 +21,18 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO_DIR = os.path.join(ROOT, 'repo')
-ZIPS_DIR = os.path.join(REPO_DIR, 'zips')
+REPO_TEMPLATE = os.path.join(ROOT, 'repo', 'repository.baldest_man')
+HOST_ROOT = os.path.join(ROOT, 'docs', 'repo')
+ZIPS_DIR = os.path.join(HOST_ROOT, 'zips')
 
-# Addon folders to package (id -> source path relative to ROOT).
+# Public URL where docs/repo/ is served (GitHub Pages).
+PAGES_BASE = 'https://brucemcduck.github.io/plugin.video.baldest_man/repo'
+
 ADDONS = {
     'plugin.video.baldest_man': ROOT,
-    'repository.baldest_man': os.path.join(REPO_DIR, 'repository.baldest_man'),
+    'repository.baldest_man': REPO_TEMPLATE,
 }
 
-# Paths excluded from the video plugin zip (repo/hosting/dev files).
 PLUGIN_SKIP = {
     '.git', '.github', 'repo', 'tools', 'docs', 'ideas.txt', 'README.md',
     'requirements.txt', 'cli.py', 'check_scrapers.py', '.gitignore',
@@ -42,12 +44,10 @@ PLUGIN_SKIP_SUFFIXES = ('.pyc', '.pyo')
 
 def _read_version(addon_dir):
     tree = ET.parse(os.path.join(addon_dir, 'addon.xml'))
-    root = tree.getroot()
-    return root.get('version', '0.0.0')
+    return tree.getroot().get('version', '0.0.0')
 
 
 def _addon_xml_body(addon_dir):
-    """Return the <addon>...</addon> element as a string for addons.xml."""
     with open(os.path.join(addon_dir, 'addon.xml'), encoding='utf-8') as f:
         text = f.read()
     m = re.search(r'(<addon[\s\S]*?</addon>)', text)
@@ -71,20 +71,15 @@ def _should_skip_plugin(name, path):
 
 
 def _zip_addon(addon_id, source_dir, dest_zip):
-    """Create addon zip with top-level folder matching addon_id."""
     os.makedirs(os.path.dirname(dest_zip), exist_ok=True)
     with tempfile.TemporaryDirectory() as staging:
         dest_root = os.path.join(staging, addon_id)
         if addon_id == 'plugin.video.baldest_man':
             for dirpath, dirnames, filenames in os.walk(source_dir):
                 rel = os.path.relpath(dirpath, source_dir)
-                if rel == '.':
-                    rel_parts = []
-                else:
-                    rel_parts = rel.split(os.sep)
                 dirnames[:] = [
                     d for d in dirnames
-                    if not _should_skip_plugin(d, os.path.join(rel, d))
+                    if not _should_skip_plugin(d, os.path.join(rel, d) if rel != '.' else d)
                 ]
                 for fname in filenames:
                     rel_path = os.path.join(rel, fname) if rel != '.' else fname
@@ -101,20 +96,39 @@ def _zip_addon(addon_id, source_dir, dest_zip):
             for dirpath, _, filenames in os.walk(dest_root):
                 for fname in filenames:
                     full = os.path.join(dirpath, fname)
-                    arc = os.path.relpath(full, staging)
-                    zf.write(full, arc)
+                    zf.write(full, os.path.relpath(full, staging))
 
 
-def _write_addons_xml(entries):
-    lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<addons>']
-    for body in entries:
-        lines.append(body)
-    lines.append('</addons>')
-    return '\n'.join(lines) + '\n'
+def _write_index_html(repo_zip_name, plugin_zip_rel):
+    return '''<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>bald_man Kodi repo</title></head>
+<body>
+<h1>bald_man</h1>
+<p>Kodi file source URL (paste in File manager):</p>
+<pre>{base}/</pre>
+<ul>
+  <li><a href="{repo_zip}">Install repository ({repo_zip_name})</a></li>
+  <li><a href="{plugin_zip}">Install addon only ({plugin_zip_name})</a></li>
+</ul>
+</body>
+</html>
+'''.format(
+        base=PAGES_BASE,
+        repo_zip=repo_zip_name,
+        repo_zip_name=os.path.basename(repo_zip_name),
+        plugin_zip=plugin_zip_rel,
+        plugin_zip_name=os.path.basename(plugin_zip_rel),
+    )
 
 
 def main():
+    if os.path.isdir(HOST_ROOT):
+        shutil.rmtree(HOST_ROOT)
+    os.makedirs(ZIPS_DIR)
+
     addon_bodies = []
+    plugin_zip_rel = ''
     for addon_id, source_dir in ADDONS.items():
         version = _read_version(source_dir)
         zip_name = '{}-{}.zip'.format(addon_id, version)
@@ -122,9 +136,13 @@ def main():
         print('Building {} -> {}'.format(addon_id, zip_path))
         _zip_addon(addon_id, source_dir, zip_path)
         addon_bodies.append(_addon_xml_body(source_dir))
+        if addon_id == 'plugin.video.baldest_man':
+            plugin_zip_rel = 'zips/{}/{}'.format(addon_id, zip_name)
 
-    addons_xml = _write_addons_xml(addon_bodies)
-    os.makedirs(ZIPS_DIR, exist_ok=True)
+    addons_xml = '\n'.join(
+        ['<?xml version="1.0" encoding="UTF-8"?>', '<addons>']
+        + addon_bodies + ['</addons>']) + '\n'
+
     xml_path = os.path.join(ZIPS_DIR, 'addons.xml')
     with open(xml_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(addons_xml)
@@ -134,15 +152,19 @@ def main():
     with open(md5_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(digest)
 
-    repo_version = _read_version(ADDONS['repository.baldest_man'])
-    repo_zip = os.path.join(
-        ZIPS_DIR, 'repository.baldest_man',
-        'repository.baldest_man-{}.zip'.format(repo_version))
-    easy_zip = os.path.join(
-        REPO_DIR, 'repository.baldest_man-{}.zip'.format(repo_version))
+    repo_version = _read_version(REPO_TEMPLATE)
+    repo_zip_name = 'repository.baldest_man-{}.zip'.format(repo_version)
+    repo_zip = os.path.join(ZIPS_DIR, 'repository.baldest_man', repo_zip_name)
+    easy_zip = os.path.join(HOST_ROOT, repo_zip_name)
     shutil.copy2(repo_zip, easy_zip)
-    print('Wrote {} and {}'.format(xml_path, md5_path))
-    print('TV install zip: {}'.format(easy_zip))
+
+    index_path = os.path.join(HOST_ROOT, 'index.html')
+    with open(index_path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(_write_index_html(repo_zip_name, plugin_zip_rel))
+
+    print('Wrote {}'.format(xml_path))
+    print('Pages root: {}/'.format(PAGES_BASE))
+    print('TV source URL: {}/'.format(PAGES_BASE))
     return 0
 
 

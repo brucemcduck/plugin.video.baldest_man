@@ -21,26 +21,33 @@ Enable **Settings → Add-ons → Unknown sources** before installing third-part
 
 ## Install (TV / Fire Stick / phone — paste one link)
 
+**One-time on GitHub:** open your repo → **Settings → Pages** → Source: **GitHub Actions** (if not already enabled). Pushes to `master` publish the install files automatically.
+
 Copy this URL (long-press to copy on mobile/TV):
 
 ```
-https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/
+https://brucemcduck.github.io/plugin.video.baldest_man/repo/
 ```
+
+Do **not** use the `raw.githubusercontent.com` link — GitHub raw URLs can't list folders, so Kodi fails with "couldn't retrieve info from link".
 
 Then in Kodi:
 
 1. **Settings → File manager → Add source** → paste the URL above → name it `bald_man`
-2. **Add-ons → Install from zip file** → `bald_man` → **`repository.baldest_man-1.0.0.zip`**
+2. **Add-ons → Install from zip file** → `bald_man` → **`repository.baldest_man-1.0.1.zip`**
 3. **Add-ons → Install from repository** → **bald_man Repository** → **Video add-ons** → **bald_man** → Install
 
-Future updates appear under **Install from repository** — no re-downloading source code.
+Future updates appear under **Install from repository**.
 
 ### One-shot install (no repository)
 
 If you only want the addon once and don't need in-app updates:
 
-1. Add this source instead: `https://raw.githubusercontent.com/brucemcduck/plugin.video.baldest_man/master/repo/zips/plugin.video.baldest_man/`
-2. **Install from zip** → **`plugin.video.baldest_man-0.1.0.zip`**
+1. Add the same source URL above (or open it in a browser on your phone)
+2. **Install from zip** → **`plugin.video.baldest_man-0.1.0.zip`** (under `zips/plugin.video.baldest_man/`)
+
+Or download the zip in a browser and sideload it locally:
+`https://brucemcduck.github.io/plugin.video.baldest_man/repo/zips/plugin.video.baldest_man/plugin.video.baldest_man-0.1.0.zip`
 
 ## Other install methods
 
@@ -66,12 +73,12 @@ Bump `version` in `addon.xml`, then rebuild the hosted repo files:
 
 ```bash
 python tools/build_repo.py
-git add repo/ addon.xml
+git add docs/repo/ addon.xml
 git commit -m "release: vX.Y.Z"
 git push
 ```
 
-Users with the repository installed get updates via **Install from repository**.
+GitHub Actions publishes `docs/` to Pages. Users with the repository installed get updates via **Install from repository**.
 
 ## First-time setup
 
