@@ -28,6 +28,11 @@ def _client_id():
     return addon.getSetting('trakt_client_id') if addon else ''
 
 
+def _client_secret():
+    addon = _addon()
+    return addon.getSetting('trakt_client_secret') if addon else ''
+
+
 def _save_tokens(access_token, refresh_tok):
     addon = _addon()
     if not addon:
@@ -46,12 +51,15 @@ def _headers(access_token=None, client_id=None):
     return h
 
 
-def get_device_code(client_id):
+def get_device_code(client_id=None):
+    cid = client_id or _client_id()
+    if not cid:
+        raise TraktError("Trakt Client ID not configured in addon")
     try:
         resp = requests.post(API + "/oauth/device/code",
-                             json={"client_id": client_id},
+                             json={"client_id": cid},
                              timeout=TIMEOUT,
-                             headers=_headers(client_id=client_id))
+                             headers=_headers(client_id=cid))
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as e:
@@ -60,16 +68,22 @@ def get_device_code(client_id):
         raise TraktError("Invalid response")
 
 
-def poll_for_token(client_id, device_code, interval=5, max_wait=300):
+def poll_for_token(client_id, device_code, interval=5, max_wait=300,
+                   cancel_check=None, client_secret=None):
+    """Poll until user authorizes. Returns token dict, or None if cancelled."""
+    cid = client_id or _client_id()
+    secret = client_secret if client_secret is not None else _client_secret()
     deadline = time.time() + max_wait
     while time.time() < deadline:
+        if cancel_check and cancel_check():
+            return None
         try:
             resp = requests.post(API + "/oauth/device/token",
                                  json={"code": device_code,
-                                       "client_id": client_id,
-                                       "client_secret": ""},
+                                       "client_id": cid,
+                                       "client_secret": secret},
                                  timeout=TIMEOUT,
-                                 headers=_headers(client_id=client_id))
+                                 headers=_headers(client_id=cid))
             if resp.status_code == 200:
                 data = resp.json()
                 return {"access_token": data["access_token"],
@@ -84,16 +98,18 @@ def poll_for_token(client_id, device_code, interval=5, max_wait=300):
     raise TraktError("Timed out waiting for authorization")
 
 
-def refresh_token(client_id, refresh_tok):
+def refresh_token(client_id, refresh_tok, client_secret=None):
+    cid = client_id or _client_id()
+    secret = client_secret if client_secret is not None else _client_secret()
     try:
         resp = requests.post(API + "/oauth/token",
                              json={"refresh_token": refresh_tok,
-                                   "client_id": client_id,
-                                   "client_secret": "",
+                                   "client_id": cid,
+                                   "client_secret": secret,
                                    "grant_type": "refresh_token",
                                    "redirect_uri": "urn:ietf:wg:oauth:2.0:oob"},
                              timeout=TIMEOUT,
-                             headers=_headers(client_id=client_id))
+                             headers=_headers(client_id=cid))
         resp.raise_for_status()
         data = resp.json()
         return {"access_token": data["access_token"],

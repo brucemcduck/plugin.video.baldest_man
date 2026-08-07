@@ -1019,39 +1019,47 @@ elif mode[0] == 'ad_account_info':
 elif mode[0] == 'auth_trakt':
     client_id = ADDON.getSetting('trakt_client_id')
     if not client_id:
-        xbmcgui.Dialog().ok(
-            "Trakt Client ID required",
-            "Create a free API app at trakt.tv/oauth/applications\n"
-            "(Redirect uri: urn:ietf:wg:oauth:2.0:oob), then paste the "
-            "Client ID into Addon settings → Trakt.")
+        notify('Trakt Client ID not set')
     else:
         try:
             data = get_device_code(client_id)
         except TraktError as e:
             notify("Trakt: " + clean_error(e))
         else:
+            user_code = data.get("user_code", "")
             msg = ("1. Go to: [COLOR skyblue]{}[/COLOR]\n"
                    "2. Enter code: [COLOR yellow]{}[/COLOR]\n"
-                   "3. Press OK, then wait for confirmation").format(
+                   "3. Wait while we check...").format(
                        data.get("verification_url", "https://trakt.tv/activate"),
-                       data.get("user_code", ""))
+                       user_code)
             xbmcgui.Dialog().ok("Trakt Authorization", msg)
 
             pdlg = xbmcgui.DialogProgress()
-            pdlg.create("Trakt", "Waiting for authorization...")
+            pdlg.create("Trakt", "Waiting for authorization...\nCode: {}".format(user_code))
             try:
-                token = poll_for_token(client_id, data["device_code"],
-                                       interval=data.get("interval", 5))
-                ADDON.setSetting('trakt_access_token', token["access_token"])
-                ADDON.setSetting('trakt_refresh_token', token["refresh_token"])
-                try:
-                    user = trakt_get_user(token["access_token"])
-                    ADDON.setSetting('traktusername',
-                                     user.get('username', '') or '')
-                except TraktError:
-                    pass
-                pdlg.close()
-                notify("Trakt authorized!")
+                token = poll_for_token(
+                    client_id, data["device_code"],
+                    interval=data.get("interval", 5),
+                    max_wait=data.get("expires_in", 600),
+                    cancel_check=pdlg.iscanceled)
+                if not token:
+                    pdlg.close()
+                    notify("Authorization cancelled")
+                else:
+                    ADDON.setSetting('trakt_access_token', token["access_token"])
+                    ADDON.setSetting('trakt_refresh_token', token["refresh_token"])
+                    try:
+                        user = trakt_get_user(token["access_token"])
+                        username = user.get('username', '') or ''
+                        if username:
+                            ADDON.setSetting('traktusername', username)
+                        pdlg.close()
+                        notify("Trakt authorized: " + (username or "success"))
+                    except TraktError as e:
+                        pdlg.close()
+                        ADDON.setSetting('trakt_access_token', "")
+                        ADDON.setSetting('trakt_refresh_token', "")
+                        notify("Authorization failed: " + clean_error(e))
             except TraktError as e:
                 pdlg.close()
                 notify("Trakt: " + clean_error(e))
