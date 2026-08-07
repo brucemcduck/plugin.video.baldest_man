@@ -9,6 +9,7 @@ debug-*.log
 .idea/
 .vscode/
 *.zip
+!repo/**/*.zip
 .DS_Store
 Thumbs.db
 
